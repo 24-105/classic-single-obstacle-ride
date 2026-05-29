@@ -29,7 +29,7 @@ const game = {
   bikeX: 0,
   score: 0,
   distance: 0,
-  lives: 3,
+  lives: 4,
   combo: 1,
   comboTimer: 0,
   bestCombo: 1,
@@ -70,14 +70,14 @@ const ROAD_MARKER_ROWS = 14;
 const ROADSIDE_POST_ROWS = 12;
 const BUILDING_COUNT = 8;
 const BASE_SPEED = 26;
-const MAX_SPEED = 158;
-const MAX_OBSTACLES = 18;
-const DIFFICULTY_SCORE_STEP = 360;
+const MAX_SPEED = 142;
+const MAX_OBSTACLES = 15;
+const DIFFICULTY_SCORE_STEP = 560;
 const MAX_DIFFICULTY_LEVEL = 9999;
 const MAX_COMBO = 16;
 const COMBO_WINDOW = 4.2;
 const RUSH_DURATION = 5.5;
-const FRONT_SPAWN_Z = 62;
+const FRONT_SPAWN_Z = 72;
 const BACK_DESPAWN_Z = -12;
 const PASS_Z = -1.28;
 const HIT_ZONE_FRONT_Z = 0.28;
@@ -122,26 +122,25 @@ renderer.shadowMap.enabled = false;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color("#dce6e8");
-scene.fog = new THREE.Fog("#dce6e8", 14, 48);
+scene.fog = null;
 
 const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 140);
-camera.position.set(0, 2.8, -11.2);
+camera.position.set(0, 3.25, -13.8);
 
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
 controls.dampingFactor = 0.075;
 controls.enablePan = false;
 controls.minDistance = 3.1;
-controls.maxDistance = 13;
+controls.maxDistance = 16;
 controls.minPolarAngle = 0.12;
 controls.maxPolarAngle = Math.PI * 0.82;
-controls.target.set(0, 1.2, 1.1);
+controls.target.set(0, 1.3, 2.45);
 
 const clock = new THREE.Clock();
 const diagnostics = { node: null, frame: 0 };
 const cameraTarget = new THREE.Vector3();
-const defaultFogColor = new THREE.Color("#dce6e8");
-const eventFogColor = new THREE.Color("#bdc7c9");
+const defaultSceneColor = new THREE.Color("#dce6e8");
 let hudRefreshTimer = 0;
 const wheelMeshes = [];
 const roadMarkers = [];
@@ -1058,42 +1057,42 @@ function spawnObstacle() {
   }
 
   if (
-    difficulty.level >= 220 &&
-    Math.random() < 0.12 + difficulty.nightmare * 0.36
+    difficulty.level >= 640 &&
+    Math.random() < 0.09 + difficulty.nightmare * 0.24
   ) {
     spawnBaitJumpTrap(difficulty);
     return;
   }
 
   if (
-    difficulty.level >= 120 &&
-    Math.random() < 0.14 + difficulty.chaos * 0.24
+    difficulty.level >= 520 &&
+    Math.random() < 0.1 + difficulty.chaos * 0.18
   ) {
     spawnSweepTrap(difficulty);
     return;
   }
 
   if (
-    difficulty.level >= 70 &&
-    Math.random() < 0.16 + difficulty.chaos * 0.3
+    difficulty.level >= 140 &&
+    Math.random() < 0.12 + difficulty.chaos * 0.22
   ) {
     spawnAirGate(difficulty);
     return;
   }
 
-  if (difficulty.level >= 45 && Math.random() < 0.16 + difficulty.chaos * 0.34) {
+  if (difficulty.level >= 90 && Math.random() < 0.14 + difficulty.chaos * 0.24) {
     spawnSlalom(difficulty);
     return;
   }
 
-  if (difficulty.level >= 14 && Math.random() < 0.22 + difficulty.factor * 0.34) {
+  if (difficulty.level >= 34 && Math.random() < 0.18 + difficulty.factor * 0.22) {
     spawnStaggeredRows(difficulty);
     return;
   }
 
   if (
-    difficulty.level >= 5 &&
-    Math.random() < 0.24 + difficulty.factor * 0.38
+    difficulty.level >= 10 &&
+    Math.random() < 0.16 + difficulty.factor * 0.24
   ) {
     spawnBlockedRow(difficulty, FRONT_SPAWN_Z);
     return;
@@ -1132,7 +1131,7 @@ function spawnStaggeredRows(difficulty) {
   spawnBlockedRowWithGap(
     difficulty,
     secondGap,
-    FRONT_SPAWN_Z + THREE.MathUtils.lerp(9.5, 6.2, difficulty.factor),
+    FRONT_SPAWN_Z + THREE.MathUtils.lerp(11.5, 7.6, difficulty.factor),
   );
 }
 
@@ -1152,7 +1151,7 @@ function spawnSlalom(difficulty) {
   const firstGap = Math.floor(Math.random() * lanes.length);
   for (let row = 0; row < 3; row += 1) {
     const gap = (firstGap + row) % lanes.length;
-    const spacing = THREE.MathUtils.lerp(8.4, 5.2, difficulty.pressure);
+    const spacing = THREE.MathUtils.lerp(10.2, 6.6, difficulty.pressure);
     spawnBlockedRowWithGap(difficulty, gap, FRONT_SPAWN_Z + row * spacing);
   }
 }
@@ -1160,21 +1159,21 @@ function spawnSlalom(difficulty) {
 function spawnAirGate(difficulty) {
   const lane = Math.floor(Math.random() * lanes.length);
   addObstacle("overhead", lane, FRONT_SPAWN_Z);
-  if (difficulty.level >= 110 && obstacles.length < getMaxObstacleCount(difficulty)) {
+  if (difficulty.level >= 210 && obstacles.length < getMaxObstacleCount(difficulty)) {
     const secondLane = (lane + (Math.random() < 0.5 ? 1 : 2)) % lanes.length;
-    addObstacle("spikes", secondLane, FRONT_SPAWN_Z + 4.8);
+    addObstacle("spikes", secondLane, FRONT_SPAWN_Z + 6.2);
   }
 }
 
 function spawnSweepTrap(difficulty) {
   const lane = Math.floor(Math.random() * lanes.length);
   addObstacle("sweeper", lane, FRONT_SPAWN_Z);
-  if (difficulty.level >= 180) {
+  if (difficulty.level >= 760) {
     const gapLane = (lane + (Math.random() < 0.5 ? 1 : 2)) % lanes.length;
     spawnBlockedRowWithGap(
       difficulty,
       gapLane,
-      FRONT_SPAWN_Z + THREE.MathUtils.lerp(7.2, 4.7, difficulty.pressure),
+      FRONT_SPAWN_Z + THREE.MathUtils.lerp(9.2, 6.2, difficulty.pressure),
     );
   }
 }
@@ -1186,12 +1185,12 @@ function spawnBaitJumpTrap(difficulty) {
     addObstacle(
       "overhead",
       lane,
-      FRONT_SPAWN_Z + THREE.MathUtils.lerp(6.2, 3.9, difficulty.nightmare),
+      FRONT_SPAWN_Z + THREE.MathUtils.lerp(7.8, 5.2, difficulty.nightmare),
     );
   }
   if (obstacles.length < getMaxObstacleCount(difficulty)) {
     const sideLane = (lane + (Math.random() < 0.5 ? 1 : 2)) % lanes.length;
-    addObstacle("oil", sideLane, FRONT_SPAWN_Z + 2.6);
+    addObstacle("oil", sideLane, FRONT_SPAWN_Z + 4.1);
   }
 }
 
@@ -1235,7 +1234,7 @@ function spawnItem(difficulty) {
 function applyItem(item) {
   const type = item.userData.type;
   if (type === "heart") {
-    game.lives = Math.min(4, game.lives + 1);
+    game.lives = Math.min(5, game.lives + 1);
     bumpCombo(1);
     chargeRush(8);
     setStatusMessage("+LIFE");
@@ -1262,10 +1261,10 @@ function chooseObstacleType(roll, difficulty) {
   if (difficulty.level < 8) {
     return roll < 0.58 ? "cone" : roll < 0.88 ? "drum" : "barrier";
   }
-  if (difficulty.level < 28) {
+  if (difficulty.level < 36) {
     return roll < 0.42 ? "cone" : roll < 0.72 ? "drum" : roll < 0.9 ? "barrier" : "spikes";
   }
-  if (difficulty.level < 75) {
+  if (difficulty.level < 110) {
     return roll < 0.28
       ? "cone"
       : roll < 0.54
@@ -1276,18 +1275,16 @@ function chooseObstacleType(roll, difficulty) {
             ? "spikes"
             : "oil";
   }
-  if (difficulty.level < 180) {
+  if (difficulty.level < 520) {
     return roll < 0.2
       ? "cone"
       : roll < 0.42
         ? "drum"
         : roll < 0.62
           ? "barrier"
-          : roll < 0.78
+          : roll < 0.8
             ? "spikes"
-            : roll < 0.92
-              ? "oil"
-              : "sweeper";
+            : "oil";
   }
   return roll < 0.14
     ? "cone"
@@ -1308,48 +1305,46 @@ function getDifficulty() {
     1,
     MAX_DIFFICULTY_LEVEL,
   );
-  const factor = Math.min(1, Math.log1p(level) / Math.log1p(420));
-  const pressure = Math.min(1, level / 240);
-  const chaos = Math.min(1, Math.max(0, level - 35) / 340);
-  const nightmare = Math.min(1, Math.max(0, level - 160) / 1400);
-  const absurd = Math.min(1, Math.max(0, level - 1200) / 5200);
+  const factor = Math.min(1, Math.log1p(level) / Math.log1p(760));
+  const pressure = Math.min(1, level / 420);
+  const chaos = Math.min(1, Math.max(0, level - 80) / 620);
+  const nightmare = Math.min(1, Math.max(0, level - 320) / 2200);
+  const absurd = Math.min(1, Math.max(0, level - 2200) / 7000);
   return { level, factor, pressure, chaos, nightmare, absurd };
 }
 
 function getTargetSpeed(difficulty) {
   const rushBoost = game.rushTimer > 0 ? 10 : 0;
   return (
-    THREE.MathUtils.lerp(BASE_SPEED + 8, MAX_SPEED, difficulty.pressure) +
-    difficulty.nightmare * 18 +
-    difficulty.absurd * 12 +
+    THREE.MathUtils.lerp(BASE_SPEED + 6, MAX_SPEED, difficulty.pressure) +
+    difficulty.nightmare * 10 +
+    difficulty.absurd * 8 +
     rushBoost
   );
 }
 
 function getSpawnDelay(difficulty) {
   let center =
-    THREE.MathUtils.lerp(1.0, 0.19, difficulty.pressure) -
-    difficulty.nightmare * 0.045 -
-    difficulty.absurd * 0.035;
+    THREE.MathUtils.lerp(1.15, 0.28, difficulty.pressure) -
+    difficulty.nightmare * 0.025 -
+    difficulty.absurd * 0.02;
   if (game.eventType === "traffic") {
-    center *= 0.72;
-  } else if (game.eventType === "fog") {
-    center *= 0.9;
+    center *= 0.82;
   }
-  const jitter = THREE.MathUtils.lerp(0.24, 0.035, difficulty.factor);
-  return THREE.MathUtils.randFloat(Math.max(0.11, center - jitter), center + jitter);
+  const jitter = THREE.MathUtils.lerp(0.28, 0.055, difficulty.factor);
+  return THREE.MathUtils.randFloat(Math.max(0.17, center - jitter), center + jitter);
 }
 
 function getItemDelay(difficulty) {
   const center =
-    THREE.MathUtils.lerp(2.7, 1.36, difficulty.factor) +
-    difficulty.nightmare * 0.42 +
-    difficulty.absurd * 0.36;
+    THREE.MathUtils.lerp(2.7, 1.55, difficulty.factor) +
+    difficulty.nightmare * 0.28 +
+    difficulty.absurd * 0.22;
   return THREE.MathUtils.randFloat(center * 0.72, center * 1.12);
 }
 
 function getMaxObstacleCount(difficulty) {
-  const eventExtra = game.eventType === "traffic" ? 3 : game.eventType === "fog" ? 1 : 0;
+  const eventExtra = game.eventType === "traffic" ? 2 : 0;
   return Math.round(
     THREE.MathUtils.lerp(4, MAX_OBSTACLES, Math.max(difficulty.pressure, difficulty.nightmare)),
   ) + eventExtra;
@@ -1603,14 +1598,13 @@ function updateRiskRouteMarker() {
 
 function getEventLabel(type = game.eventType) {
   if (type === "gust") return "GUST";
-  if (type === "fog") return "FOG";
   if (type === "traffic") return "RUSH HOUR";
   return "";
 }
 
 function startRandomEvent(difficulty) {
   const candidates =
-    difficulty.level < 12 ? ["gust", "fog"] : ["gust", "fog", "traffic"];
+    difficulty.level < 12 ? ["gust"] : ["gust", "traffic"];
   game.eventType = candidates[Math.floor(Math.random() * candidates.length)];
   game.eventTimer =
     THREE.MathUtils.randFloat(RANDOM_EVENT_MIN_DURATION, RANDOM_EVENT_MAX_DURATION) +
@@ -1643,17 +1637,7 @@ function updateRandomEvent(delta, difficulty) {
 }
 
 function applyEventVisuals() {
-  if (game.eventType === "fog") {
-    scene.background.copy(eventFogColor);
-    scene.fog.color.copy(eventFogColor);
-    scene.fog.near = 7.5;
-    scene.fog.far = 27;
-    return;
-  }
-  scene.background.copy(defaultFogColor);
-  scene.fog.color.copy(defaultFogColor);
-  scene.fog.near = 14;
-  scene.fog.far = 48;
+  scene.background.copy(defaultSceneColor);
 }
 
 function updateGame(delta) {
@@ -1725,10 +1709,10 @@ function updateGame(delta) {
       getTargetSpeed(difficulty),
       game.speed +
         delta *
-          (1.65 +
-            difficulty.pressure * 26 +
-            difficulty.nightmare * 24 +
-            difficulty.absurd * 32),
+          (1.25 +
+            difficulty.pressure * 12 +
+            difficulty.nightmare * 10 +
+            difficulty.absurd * 12),
     );
     updateHighScore();
     if (game.comboTimer > 0) {
@@ -1753,8 +1737,8 @@ function updateGame(delta) {
     if (obstacle.userData.motion === "sweep") {
       const minLaneX = Math.min(...lanes);
       const maxLaneX = Math.max(...lanes);
-      const amplitude = THREE.MathUtils.lerp(0.45, 1.35, difficulty.chaos);
-      const motionSpeed = THREE.MathUtils.lerp(1.8, 3.8, difficulty.nightmare);
+      const amplitude = THREE.MathUtils.lerp(0.34, 1.0, difficulty.chaos);
+      const motionSpeed = THREE.MathUtils.lerp(0.55, 1.25, difficulty.nightmare);
       obstacle.position.x = THREE.MathUtils.clamp(
         obstacle.userData.baseX +
           Math.sin(clock.elapsedTime * motionSpeed + obstacle.userData.motionPhase) *
@@ -1857,7 +1841,7 @@ function updateGame(delta) {
     wheel.rotation.x += delta * (game.running ? game.speed : 16) * 0.18;
   });
 
-  cameraTarget.set(0, 1.18 + game.jumpHeight * 0.18, 1.08);
+  cameraTarget.set(0, 1.3 + game.jumpHeight * 0.14, 2.45);
   controls.target.lerp(cameraTarget, 0.045);
 }
 
@@ -1932,7 +1916,7 @@ function resetGame() {
   game.bikeX = 0;
   game.score = 0;
   game.distance = 0;
-  game.lives = 3;
+  game.lives = 4;
   game.combo = 1;
   game.comboTimer = 0;
   game.bestCombo = 1;
@@ -2010,7 +1994,7 @@ function hideGameOver() {
 
 function updateLifeHud() {
   const currentLives = Math.max(0, game.lives);
-  const maxLives = 4;
+  const maxLives = 5;
   lifeValue.setAttribute("aria-label", `Life ${currentLives}`);
   lifeValue.replaceChildren(
     ...Array.from({ length: maxLives }, (_, index) => {
@@ -2214,9 +2198,9 @@ function resize() {
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
   if (width < 820) {
-    camera.position.set(0, 2.8, -11.2);
+    camera.position.set(0, 3.25, -13.8);
   } else {
-    camera.position.set(0.35, 2.9, -10.8);
+    camera.position.set(0.35, 3.25, -13.2);
   }
 }
 
