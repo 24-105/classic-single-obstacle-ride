@@ -10,11 +10,12 @@ const leftButton = document.querySelector("#leftButton");
 const rightButton = document.querySelector("#rightButton");
 const jumpButton = document.querySelector("#jumpButton");
 const scoreValue = document.querySelector("#scoreValue");
-const distanceValue = document.querySelector("#distanceValue");
-const speedValue = document.querySelector("#speedValue");
+const levelValue = document.querySelector("#levelValue");
+const rushValue = document.querySelector("#rushValue");
 const lifeValue = document.querySelector("#lifeValue");
 const comboValue = document.querySelector("#comboValue");
 const highScoreValue = document.querySelector("#highScoreValue");
+const goalText = document.querySelector("#goalText");
 const gameStatus = document.querySelector("#gameStatus");
 const gameOverOverlay = document.querySelector("#gameOverOverlay");
 const finalScoreValue = document.querySelector("#finalScoreValue");
@@ -32,6 +33,12 @@ const game = {
   combo: 1,
   comboTimer: 0,
   bestCombo: 1,
+  rushMeter: 0,
+  rushTimer: 0,
+  coins: 0,
+  nearMisses: 0,
+  jumpDodges: 0,
+  missionIndex: 0,
   highScore: readSessionHighScore(),
   speed: 26,
   spawnTimer: 1.1,
@@ -42,6 +49,9 @@ const game = {
   statusText: "",
   jumpHeight: 0,
   jumpVelocity: 0,
+  jumpCooldown: 0,
+  jumpChain: 0,
+  groundTimer: 1,
   lean: 0,
 };
 const MOBILE_RENDER_SCALE = 1;
@@ -51,15 +61,33 @@ const ROAD_MARKER_ROWS = 14;
 const ROADSIDE_POST_ROWS = 12;
 const BUILDING_COUNT = 8;
 const BASE_SPEED = 26;
-const MAX_SPEED = 64;
-const MAX_OBSTACLES = 7;
-const DIFFICULTY_SCORE_STEP = 900;
-const MAX_DIFFICULTY_LEVEL = 12;
-const MAX_COMBO = 9;
+const MAX_SPEED = 158;
+const MAX_OBSTACLES = 18;
+const DIFFICULTY_SCORE_STEP = 360;
+const MAX_DIFFICULTY_LEVEL = 9999;
+const MAX_COMBO = 16;
 const COMBO_WINDOW = 4.2;
+const RUSH_DURATION = 5.5;
 const FRONT_SPAWN_Z = 62;
 const BACK_DESPAWN_Z = -12;
 const PASS_Z = -1.28;
+const HIT_ZONE_FRONT_Z = 0.28;
+const HIT_ZONE_BACK_Z = -0.45;
+const JUMP_GRAVITY = 10.6;
+const JUMP_BASE_VELOCITY = 4.42;
+const JUMP_MIN_VELOCITY = 3.18;
+const JUMP_LANDING_RECOVERY = 0.32;
+const JUMP_CHAIN_RECOVERY = 0.82;
+const MAX_JUMP_CHAIN = 5;
+
+const missions = [
+  { label: "COINを3個集める", type: "coins", target: 3, reward: 900 },
+  { label: "NEARを3回決める", type: "nearMisses", target: 3, reward: 1200 },
+  { label: "JUMP回避を4回決める", type: "jumpDodges", target: 4, reward: 1500 },
+  { label: "COMBO x8到達", type: "combo", target: 8, reward: 1800 },
+  { label: "LV 25到達", type: "level", target: 25, reward: 2400 },
+  { label: "RUSH中に走り切る", type: "rush", target: 1, reward: 2600 },
+];
 
 const renderer = new THREE.WebGLRenderer({
   canvas,
@@ -142,14 +170,24 @@ function initialize() {
 }
 
 function bindPress(element, handler) {
+  let lastPointerPress = 0;
+  const run = (event) => {
+    event.preventDefault();
+    lastPointerPress = performance.now();
+    handler();
+  };
   element.addEventListener(
     "pointerdown",
-    (event) => {
-      event.preventDefault();
-      handler();
-    },
+    run,
     { passive: false },
   );
+  element.addEventListener("click", (event) => {
+    event.preventDefault();
+    if (performance.now() - lastPointerPress < 350) {
+      return;
+    }
+    handler();
+  });
 }
 
 function readSessionHighScore() {
@@ -304,9 +342,28 @@ function createMaterials() {
       roughness: 0.42,
       metalness: 0.08,
     }),
+    oil: new THREE.MeshStandardMaterial({
+      color: "#10151a",
+      roughness: 0.18,
+      metalness: 0.34,
+      transparent: true,
+      opacity: 0.86,
+    }),
+    trap: new THREE.MeshStandardMaterial({
+      color: "#e24d4d",
+      roughness: 0.38,
+      metalness: 0.16,
+    }),
+    spike: new THREE.MeshStandardMaterial({
+      color: "#f0f5f6",
+      roughness: 0.24,
+      metalness: 0.72,
+      envMapIntensity,
+    }),
     bonus: new THREE.MeshBasicMaterial({ color: "#63e0a3" }),
     heart: new THREE.MeshBasicMaterial({ color: "#ff6686" }),
     shield: new THREE.MeshBasicMaterial({ color: "#64c7ff" }),
+    star: new THREE.MeshBasicMaterial({ color: "#ffd15c" }),
   };
 }
 
@@ -735,14 +792,45 @@ function createHelmet() {
   return helmet;
 }
 
+function getObstacleProfile(type) {
+  const profiles = {
+    cone: { width: 0.32, jumpClear: 0.28, collision: "ground", scoreJump: true },
+    spikes: { width: 0.52, jumpClear: 0.36, collision: "ground", scoreJump: true },
+    oil: { width: 0.58, jumpClear: 0.2, collision: "slip", scoreJump: false },
+    overhead: {
+      width: 0.62,
+      jumpClear: 999,
+      collision: "air",
+      airHitMin: 0.32,
+      scoreJump: false,
+    },
+    sweeper: {
+      width: 0.48,
+      jumpClear: 999,
+      collision: "ground",
+      motion: "sweep",
+      scoreJump: false,
+    },
+    barrier: { width: 0.58, jumpClear: 999, collision: "ground", scoreJump: false },
+    drum: { width: 0.42, jumpClear: 999, collision: "ground", scoreJump: false },
+  };
+  return profiles[type] || profiles.drum;
+}
+
 function createObstacle(type) {
+  const profile = getObstacleProfile(type);
   const group = new THREE.Group();
   group.userData = {
     type,
     hit: false,
     passed: false,
-    width: type === "barrier" ? 0.58 : type === "cone" ? 0.32 : 0.42,
-    jumpClear: type === "cone" ? 0.22 : 999,
+    width: profile.width,
+    jumpClear: profile.jumpClear,
+    collision: profile.collision,
+    airHitMin: profile.airHitMin || 999,
+    motion: profile.motion || "",
+    motionPhase: Math.random() * Math.PI * 2,
+    scoreJump: profile.scoreJump,
   };
 
   if (type === "cone") {
@@ -772,6 +860,78 @@ function createObstacle(type) {
     const stripeB = stripeA.clone();
     stripeB.position.x = 0.28;
     group.add(beam, stripeA, stripeB);
+  } else if (type === "spikes") {
+    const base = new THREE.Mesh(
+      new RoundedBoxGeometry(1.05, 0.08, 0.46, 3, 0.015),
+      materials.trap,
+    );
+    base.position.y = 0.06;
+    group.add(base);
+    [-0.36, -0.12, 0.12, 0.36].forEach((x) => {
+      const spike = new THREE.Mesh(
+        new THREE.ConeGeometry(0.105, 0.38, 4),
+        materials.spike,
+      );
+      spike.position.set(x, 0.29, 0);
+      spike.rotation.y = Math.PI * 0.25;
+      group.add(spike);
+    });
+  } else if (type === "oil") {
+    const slick = new THREE.Mesh(
+      new RoundedBoxGeometry(1.08, 0.024, 0.78, 6, 0.08),
+      materials.oil,
+    );
+    slick.position.y = 0.02;
+    const glint = new THREE.Mesh(
+      new RoundedBoxGeometry(0.58, 0.028, 0.055, 3, 0.02),
+      materials.shield,
+    );
+    glint.position.set(-0.12, 0.04, -0.12);
+    glint.rotation.y = -0.28;
+    group.add(slick, glint);
+  } else if (type === "overhead") {
+    const beam = new THREE.Mesh(
+      new RoundedBoxGeometry(1.08, 0.14, 0.18, 4, 0.03),
+      materials.trap,
+    );
+    beam.position.y = 1.58;
+    const stripeA = new THREE.Mesh(
+      new RoundedBoxGeometry(0.13, 0.16, 0.19, 2, 0.01),
+      materials.coneBand,
+    );
+    stripeA.position.set(-0.22, 1.58, -0.01);
+    stripeA.rotation.z = -0.58;
+    const stripeB = stripeA.clone();
+    stripeB.position.x = 0.22;
+    const postA = new THREE.Mesh(
+      new RoundedBoxGeometry(0.08, 1.1, 0.08, 2, 0.015),
+      materials.barrier,
+    );
+    postA.position.set(-0.48, 0.72, 0);
+    const postB = postA.clone();
+    postB.position.x = 0.48;
+    group.add(beam, stripeA, stripeB, postA, postB);
+  } else if (type === "sweeper") {
+    const body = new THREE.Mesh(
+      new RoundedBoxGeometry(0.82, 0.28, 0.24, 5, 0.035),
+      materials.trap,
+    );
+    body.position.y = 0.42;
+    const capA = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.12, 0.12, 0.08, 18),
+      materials.warning,
+    );
+    capA.rotation.z = Math.PI * 0.5;
+    capA.position.set(-0.45, 0.42, 0);
+    const capB = capA.clone();
+    capB.position.x = 0.45;
+    const warning = new THREE.Mesh(
+      new RoundedBoxGeometry(0.56, 0.055, 0.25, 2, 0.01),
+      materials.coneBand,
+    );
+    warning.position.y = 0.42;
+    warning.rotation.z = -0.5;
+    group.add(body, capA, capB, warning);
   } else {
     const drum = new THREE.Mesh(
       new THREE.CylinderGeometry(0.28, 0.28, 0.74, 28),
@@ -826,6 +986,17 @@ function createItem(type) {
       materials.shield,
     );
     group.add(ring, core);
+  } else if (type === "star") {
+    const core = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.24, 0),
+      materials.star,
+    );
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(0.3, 0.018, 6, 24),
+      materials.star,
+    );
+    ring.rotation.x = Math.PI * 0.5;
+    group.add(core, ring);
   } else {
     const coin = new THREE.Mesh(
       new THREE.CylinderGeometry(0.2, 0.2, 0.06, 22),
@@ -850,14 +1021,43 @@ function spawnObstacle() {
     return;
   }
 
-  if (difficulty.level >= 8 && Math.random() < 0.3 + difficulty.factor * 0.28) {
+  if (
+    difficulty.level >= 220 &&
+    Math.random() < 0.12 + difficulty.nightmare * 0.36
+  ) {
+    spawnBaitJumpTrap(difficulty);
+    return;
+  }
+
+  if (
+    difficulty.level >= 120 &&
+    Math.random() < 0.14 + difficulty.chaos * 0.24
+  ) {
+    spawnSweepTrap(difficulty);
+    return;
+  }
+
+  if (
+    difficulty.level >= 70 &&
+    Math.random() < 0.16 + difficulty.chaos * 0.3
+  ) {
+    spawnAirGate(difficulty);
+    return;
+  }
+
+  if (difficulty.level >= 45 && Math.random() < 0.16 + difficulty.chaos * 0.34) {
+    spawnSlalom(difficulty);
+    return;
+  }
+
+  if (difficulty.level >= 14 && Math.random() < 0.22 + difficulty.factor * 0.34) {
     spawnStaggeredRows(difficulty);
     return;
   }
 
   if (
-    difficulty.level >= 3 &&
-    Math.random() < 0.18 + difficulty.factor * 0.42
+    difficulty.level >= 5 &&
+    Math.random() < 0.24 + difficulty.factor * 0.38
   ) {
     spawnBlockedRow(difficulty, FRONT_SPAWN_Z);
     return;
@@ -912,10 +1112,58 @@ function spawnBlockedRowWithGap(difficulty, gapLane, z) {
   });
 }
 
+function spawnSlalom(difficulty) {
+  const firstGap = Math.floor(Math.random() * lanes.length);
+  for (let row = 0; row < 3; row += 1) {
+    const gap = (firstGap + row) % lanes.length;
+    const spacing = THREE.MathUtils.lerp(8.4, 5.2, difficulty.pressure);
+    spawnBlockedRowWithGap(difficulty, gap, FRONT_SPAWN_Z + row * spacing);
+  }
+}
+
+function spawnAirGate(difficulty) {
+  const lane = Math.floor(Math.random() * lanes.length);
+  addObstacle("overhead", lane, FRONT_SPAWN_Z);
+  if (difficulty.level >= 110 && obstacles.length < getMaxObstacleCount(difficulty)) {
+    const secondLane = (lane + (Math.random() < 0.5 ? 1 : 2)) % lanes.length;
+    addObstacle("spikes", secondLane, FRONT_SPAWN_Z + 4.8);
+  }
+}
+
+function spawnSweepTrap(difficulty) {
+  const lane = Math.floor(Math.random() * lanes.length);
+  addObstacle("sweeper", lane, FRONT_SPAWN_Z);
+  if (difficulty.level >= 180) {
+    const gapLane = (lane + (Math.random() < 0.5 ? 1 : 2)) % lanes.length;
+    spawnBlockedRowWithGap(
+      difficulty,
+      gapLane,
+      FRONT_SPAWN_Z + THREE.MathUtils.lerp(7.2, 4.7, difficulty.pressure),
+    );
+  }
+}
+
+function spawnBaitJumpTrap(difficulty) {
+  const lane = Math.floor(Math.random() * lanes.length);
+  addObstacle(Math.random() < 0.5 ? "cone" : "spikes", lane, FRONT_SPAWN_Z);
+  if (obstacles.length < getMaxObstacleCount(difficulty)) {
+    addObstacle(
+      "overhead",
+      lane,
+      FRONT_SPAWN_Z + THREE.MathUtils.lerp(6.2, 3.9, difficulty.nightmare),
+    );
+  }
+  if (obstacles.length < getMaxObstacleCount(difficulty)) {
+    const sideLane = (lane + (Math.random() < 0.5 ? 1 : 2)) % lanes.length;
+    addObstacle("oil", sideLane, FRONT_SPAWN_Z + 2.6);
+  }
+}
+
 function addObstacle(type, lane, z) {
   const obstacle = createObstacle(type);
   obstacle.position.set(lanes[lane], 0, z);
   obstacle.userData.lane = lane;
+  obstacle.userData.baseX = obstacle.position.x;
   obstacles.push(obstacle);
   obstacleGroup.add(obstacle);
 }
@@ -925,7 +1173,19 @@ function spawnItem(difficulty) {
     return;
   }
   const roll = Math.random();
-  const type = roll < 0.68 ? "coin" : roll < 0.86 ? "shield" : "heart";
+  const aidPenalty = difficulty.nightmare * 0.1 + difficulty.absurd * 0.08;
+  const supportScale = 1 - Math.min(0.55, aidPenalty * 2.2);
+  const coinCutoff = 0.66 + aidPenalty;
+  const shieldCutoff = coinCutoff + 0.14 * supportScale;
+  const heartCutoff = shieldCutoff + 0.1 * supportScale;
+  const type =
+    roll < coinCutoff
+      ? "coin"
+      : roll < shieldCutoff
+        ? "shield"
+        : roll < heartCutoff
+          ? "heart"
+          : "star";
   const lane = Math.floor(Math.random() * lanes.length);
   const item = createItem(type);
   item.position.x = lanes[lane];
@@ -941,57 +1201,116 @@ function applyItem(item) {
   if (type === "heart") {
     game.lives = Math.min(4, game.lives + 1);
     bumpCombo(1);
+    chargeRush(8);
     setStatusMessage("+LIFE");
   } else if (type === "shield") {
     game.shieldTimer = 4.8;
     bumpCombo(1);
+    chargeRush(14);
     setStatusMessage("SHIELD");
+  } else if (type === "star") {
+    startRush();
+    bumpCombo(3);
+    awardScore(600 + getDifficulty().level * 10, "RUSH");
   } else {
+    game.coins += 1;
     bumpCombo(1);
-    awardScore(220 + getDifficulty().level * 30, "COIN");
+    chargeRush(10);
+    awardScore(180 + getDifficulty().level * 8, "COIN");
   }
+  checkMission();
   updateHighScore();
 }
 
 function chooseObstacleType(roll, difficulty) {
-  if (difficulty.level < 3) {
-    return roll < 0.62 ? "cone" : roll < 0.9 ? "drum" : "barrier";
-  }
   if (difficulty.level < 8) {
-    return roll < 0.38 ? "cone" : roll < 0.72 ? "drum" : "barrier";
+    return roll < 0.58 ? "cone" : roll < 0.88 ? "drum" : "barrier";
   }
-  return roll < 0.24 ? "cone" : roll < 0.58 ? "drum" : "barrier";
+  if (difficulty.level < 28) {
+    return roll < 0.42 ? "cone" : roll < 0.72 ? "drum" : roll < 0.9 ? "barrier" : "spikes";
+  }
+  if (difficulty.level < 75) {
+    return roll < 0.28
+      ? "cone"
+      : roll < 0.54
+        ? "drum"
+        : roll < 0.76
+          ? "barrier"
+          : roll < 0.9
+            ? "spikes"
+            : "oil";
+  }
+  if (difficulty.level < 180) {
+    return roll < 0.2
+      ? "cone"
+      : roll < 0.42
+        ? "drum"
+        : roll < 0.62
+          ? "barrier"
+          : roll < 0.78
+            ? "spikes"
+            : roll < 0.92
+              ? "oil"
+              : "sweeper";
+  }
+  return roll < 0.14
+    ? "cone"
+    : roll < 0.3
+      ? "drum"
+      : roll < 0.48
+        ? "barrier"
+        : roll < 0.66
+          ? "spikes"
+          : roll < 0.84
+            ? "oil"
+            : "sweeper";
 }
 
 function getDifficulty() {
   const level = THREE.MathUtils.clamp(
-    Math.floor(game.score / DIFFICULTY_SCORE_STEP),
-    0,
+    Math.floor(game.score / DIFFICULTY_SCORE_STEP) + 1,
+    1,
     MAX_DIFFICULTY_LEVEL,
   );
-  return {
-    level,
-    factor: level / MAX_DIFFICULTY_LEVEL,
-  };
+  const factor = Math.min(1, Math.log1p(level) / Math.log1p(420));
+  const pressure = Math.min(1, level / 240);
+  const chaos = Math.min(1, Math.max(0, level - 35) / 340);
+  const nightmare = Math.min(1, Math.max(0, level - 160) / 1400);
+  const absurd = Math.min(1, Math.max(0, level - 1200) / 5200);
+  return { level, factor, pressure, chaos, nightmare, absurd };
 }
 
 function getTargetSpeed(difficulty) {
-  return THREE.MathUtils.lerp(BASE_SPEED + 8, MAX_SPEED, difficulty.factor);
+  const rushBoost = game.rushTimer > 0 ? 10 : 0;
+  return (
+    THREE.MathUtils.lerp(BASE_SPEED + 8, MAX_SPEED, difficulty.pressure) +
+    difficulty.nightmare * 18 +
+    difficulty.absurd * 12 +
+    rushBoost
+  );
 }
 
 function getSpawnDelay(difficulty) {
-  const center = THREE.MathUtils.lerp(1.06, 0.32, difficulty.factor);
-  const jitter = THREE.MathUtils.lerp(0.26, 0.07, difficulty.factor);
-  return THREE.MathUtils.randFloat(center - jitter, center + jitter);
+  const center =
+    THREE.MathUtils.lerp(1.0, 0.19, difficulty.pressure) -
+    difficulty.nightmare * 0.045 -
+    difficulty.absurd * 0.035;
+  const jitter = THREE.MathUtils.lerp(0.24, 0.035, difficulty.factor);
+  return THREE.MathUtils.randFloat(Math.max(0.11, center - jitter), center + jitter);
 }
 
 function getItemDelay(difficulty) {
-  const center = THREE.MathUtils.lerp(2.8, 1.75, difficulty.factor);
-  return THREE.MathUtils.randFloat(center * 0.72, center * 1.18);
+  const center =
+    THREE.MathUtils.lerp(2.7, 1.36, difficulty.factor) +
+    difficulty.nightmare * 0.42 +
+    difficulty.absurd * 0.36;
+  return THREE.MathUtils.randFloat(center * 0.72, center * 1.12);
 }
 
 function getMaxObstacleCount(difficulty) {
-  return Math.round(THREE.MathUtils.lerp(4, MAX_OBSTACLES, difficulty.factor));
+  return Math.round(
+    THREE.MathUtils.lerp(4, MAX_OBSTACLES, Math.max(difficulty.pressure, difficulty.nightmare)),
+  );
 }
 
 function bumpCombo(amount = 1) {
@@ -1005,12 +1324,58 @@ function resetCombo() {
   game.comboTimer = 0;
 }
 
+function chargeRush(amount) {
+  game.rushMeter = Math.min(100, game.rushMeter + amount);
+  if (game.rushMeter >= 100) {
+    startRush();
+  }
+}
+
+function startRush() {
+  game.rushMeter = 0;
+  game.rushTimer = Math.max(game.rushTimer, RUSH_DURATION);
+  game.shieldTimer = Math.max(game.shieldTimer, RUSH_DURATION);
+  setStatusMessage("RUSH MODE", 1.2);
+}
+
 function awardScore(base, label = "") {
-  const amount = Math.round(base * game.combo);
+  const rushBonus = game.rushTimer > 0 ? 1.7 : 1;
+  const amount = Math.round(base * game.combo * rushBonus);
   game.score += amount;
   if (label) {
     setStatusMessage(`${label} +${amount}`);
   }
+  updateHighScore();
+}
+
+function getMission() {
+  return missions[game.missionIndex % missions.length];
+}
+
+function getMissionProgress(mission, difficulty = getDifficulty()) {
+  if (mission.type === "coins") return game.coins;
+  if (mission.type === "nearMisses") return game.nearMisses;
+  if (mission.type === "jumpDodges") return game.jumpDodges;
+  if (mission.type === "combo") return game.bestCombo;
+  if (mission.type === "level") return difficulty.level;
+  if (mission.type === "rush") return game.rushTimer > 0 ? 1 : 0;
+  return 0;
+}
+
+function checkMission() {
+  const mission = getMission();
+  if (getMissionProgress(mission) < mission.target) {
+    return;
+  }
+  const reward = mission.reward + getDifficulty().level * 20;
+  game.score += reward;
+  game.missionIndex += 1;
+  game.coins = 0;
+  game.nearMisses = 0;
+  game.jumpDodges = 0;
+  game.bestCombo = game.combo;
+  chargeRush(28);
+  setStatusMessage(`GOAL +${reward}`, 1.35);
   updateHighScore();
 }
 
@@ -1020,6 +1385,37 @@ function updateHighScore() {
   }
   game.highScore = game.score;
   saveSessionHighScore(game.highScore);
+}
+
+function getObstacleHitType(obstacle, lateral) {
+  if (lateral >= obstacle.userData.width) {
+    return "";
+  }
+  if (obstacle.userData.collision === "air") {
+    return game.jumpHeight > obstacle.userData.airHitMin ? "hit" : "";
+  }
+  if (obstacle.userData.collision === "slip") {
+    return game.jumpHeight > obstacle.userData.jumpClear ? "" : "slip";
+  }
+  return game.jumpHeight > obstacle.userData.jumpClear ? "" : "hit";
+}
+
+function applySlipTrap() {
+  if (game.invulnerable > 0) {
+    return;
+  }
+  const edgePush =
+    game.targetLane === 0 ? 1 : game.targetLane === lanes.length - 1 ? -1 : 0;
+  const direction = edgePush || (Math.random() < 0.5 ? -1 : 1);
+  game.targetLane = THREE.MathUtils.clamp(
+    game.targetLane + direction,
+    0,
+    lanes.length - 1,
+  );
+  game.speed = Math.max(BASE_SPEED, game.speed * 0.92);
+  game.invulnerable = 0.16;
+  resetCombo();
+  setStatusMessage("SLIP", 0.85);
 }
 
 function updateGame(delta) {
@@ -1037,12 +1433,25 @@ function updateGame(delta) {
     0.18,
   );
 
+  if (game.jumpCooldown > 0) {
+    game.jumpCooldown = Math.max(0, game.jumpCooldown - delta);
+  }
   if (game.jumpHeight > 0 || game.jumpVelocity > 0) {
-    game.jumpVelocity -= 8.8 * delta;
+    game.groundTimer = 0;
+    game.jumpVelocity -= JUMP_GRAVITY * delta;
     game.jumpHeight += game.jumpVelocity * delta;
     if (game.jumpHeight <= 0) {
       game.jumpHeight = 0;
       game.jumpVelocity = 0;
+      game.jumpCooldown = Math.max(
+        game.jumpCooldown,
+        JUMP_LANDING_RECOVERY + Math.min(0.24, game.jumpChain * 0.055),
+      );
+    }
+  } else {
+    game.groundTimer += delta;
+    if (game.groundTimer > JUMP_CHAIN_RECOVERY && game.jumpChain > 0) {
+      game.jumpChain = Math.max(0, game.jumpChain - delta * 1.8);
     }
   }
 
@@ -1050,7 +1459,10 @@ function updateGame(delta) {
   if (game.running) {
     game.distance += (game.speed * delta) / 3600;
     game.score +=
-      delta * game.speed * THREE.MathUtils.lerp(0.9, 1.28, difficulty.factor);
+      delta *
+      game.speed *
+      THREE.MathUtils.lerp(0.9, 1.42, difficulty.factor) *
+      (game.rushTimer > 0 ? 1.45 : 1);
     game.spawnTimer -= delta;
     game.itemTimer -= delta;
     if (game.spawnTimer <= 0) {
@@ -1063,7 +1475,12 @@ function updateGame(delta) {
     }
     game.speed = Math.min(
       getTargetSpeed(difficulty),
-      game.speed + delta * (1.65 + difficulty.level * 0.28),
+      game.speed +
+        delta *
+          (1.65 +
+            difficulty.pressure * 26 +
+            difficulty.nightmare * 24 +
+            difficulty.absurd * 32),
     );
     updateHighScore();
     if (game.comboTimer > 0) {
@@ -1072,6 +1489,10 @@ function updateGame(delta) {
         game.combo = 1;
       }
     }
+    if (game.rushTimer > 0) {
+      game.rushTimer = Math.max(0, game.rushTimer - delta);
+      checkMission();
+    }
   }
 
   roadMarkers.forEach((marker) => wrapZ(marker, speedUnits * delta, 38, -92));
@@ -1079,41 +1500,73 @@ function updateGame(delta) {
     wrapZ(object, speedUnits * delta * 0.72, 42, -96),
   );
   obstacles.forEach((obstacle) => {
+    const previousZ = obstacle.position.z;
     obstacle.position.z -= speedUnits * delta;
+    if (obstacle.userData.motion === "sweep") {
+      const minLaneX = Math.min(...lanes);
+      const maxLaneX = Math.max(...lanes);
+      const amplitude = THREE.MathUtils.lerp(0.45, 1.35, difficulty.chaos);
+      const motionSpeed = THREE.MathUtils.lerp(1.8, 3.8, difficulty.nightmare);
+      obstacle.position.x = THREE.MathUtils.clamp(
+        obstacle.userData.baseX +
+          Math.sin(clock.elapsedTime * motionSpeed + obstacle.userData.motionPhase) *
+            amplitude,
+        minLaneX,
+        maxLaneX,
+      );
+    }
     obstacle.rotation.y += delta * 0.35;
+    if (
+      !obstacle.userData.hit &&
+      previousZ > HIT_ZONE_BACK_Z &&
+      obstacle.position.z < HIT_ZONE_FRONT_Z
+    ) {
+      const lateral = Math.abs(obstacle.position.x - game.bikeX);
+      const hitType = getObstacleHitType(obstacle, lateral);
+      if (hitType && game.shieldTimer > 0) {
+        obstacle.userData.hit = true;
+        game.shieldTimer = 0;
+        bumpCombo(1);
+        chargeRush(8);
+        awardScore(120, "GUARD");
+        checkMission();
+      } else if (hitType === "slip") {
+        obstacle.userData.hit = true;
+        applySlipTrap();
+      } else if (hitType === "hit") {
+        obstacle.userData.hit = true;
+        registerHit();
+      }
+    }
     if (!obstacle.userData.passed && obstacle.position.z < PASS_Z) {
       obstacle.userData.passed = true;
+      if (obstacle.userData.hit) {
+        return;
+      }
       const lateral = Math.abs(obstacle.position.x - game.bikeX);
-      const jumpedCone =
-        obstacle.userData.jumpClear < 999 && game.jumpHeight > 0.15;
+      const jumpedObstacle =
+        obstacle.userData.scoreJump &&
+        lateral < obstacle.userData.width &&
+        game.jumpHeight > obstacle.userData.jumpClear;
+      const duckedAirGate =
+        obstacle.userData.collision === "air" &&
+        lateral < obstacle.userData.width &&
+        game.jumpHeight < obstacle.userData.airHitMin * 0.45;
       const nearMiss =
         lateral >= obstacle.userData.width &&
         lateral < obstacle.userData.width + 0.46;
-      if (nearMiss || jumpedCone) {
+      if (nearMiss || jumpedObstacle || duckedAirGate) {
+        if (nearMiss) game.nearMisses += 1;
+        if (jumpedObstacle) game.jumpDodges += 1;
         bumpCombo(1);
-        awardScore(nearMiss ? 150 : 130, nearMiss ? "NEAR" : "JUMP");
+        chargeRush(nearMiss ? 12 : 10);
+        awardScore(
+          nearMiss ? 150 : duckedAirGate ? 145 : 130,
+          nearMiss ? "NEAR" : duckedAirGate ? "LOW" : "JUMP",
+        );
+        checkMission();
       } else {
         awardScore(82);
-      }
-    }
-    if (
-      !obstacle.userData.hit &&
-      obstacle.position.z > -0.45 &&
-      obstacle.position.z < 0.28
-    ) {
-      const lateral = Math.abs(obstacle.position.x - game.bikeX);
-      const canJump = game.jumpHeight > obstacle.userData.jumpClear;
-      if (
-        lateral < obstacle.userData.width &&
-        !canJump &&
-        game.shieldTimer > 0
-      ) {
-        obstacle.userData.hit = true;
-        bumpCombo(1);
-        awardScore(120, "GUARD");
-      } else if (lateral < obstacle.userData.width && !canJump) {
-        obstacle.userData.hit = true;
-        registerHit();
       }
     }
   });
@@ -1188,9 +1641,13 @@ function registerHit() {
     return;
   }
   game.lives -= 1;
-  game.invulnerable = 1.1;
+  game.invulnerable = 0.52;
   resetCombo();
-  gameStatus.textContent = game.lives > 0 ? "HIT" : "GAME OVER";
+  if (game.lives > 0) {
+    setStatusMessage("HIT", 0.8);
+  } else {
+    gameStatus.textContent = "";
+  }
   if (game.lives <= 0) {
     game.running = false;
     game.over = true;
@@ -1217,8 +1674,19 @@ function jump() {
   if (game.jumpHeight > 0.02 || game.jumpVelocity > 0.1) {
     return;
   }
+  if (game.jumpCooldown > 0) {
+    setStatusMessage("LANDING", 0.35);
+    return;
+  }
   game.running = true;
-  game.jumpVelocity = 4.6;
+  game.jumpChain = Math.min(MAX_JUMP_CHAIN, Math.floor(game.jumpChain) + 1);
+  const fatigue = game.jumpChain / MAX_JUMP_CHAIN;
+  game.jumpVelocity = THREE.MathUtils.lerp(
+    JUMP_BASE_VELOCITY,
+    JUMP_MIN_VELOCITY,
+    fatigue,
+  );
+  game.groundTimer = 0;
   setStartButtonState();
 }
 
@@ -1242,6 +1710,11 @@ function resetGame() {
   game.combo = 1;
   game.comboTimer = 0;
   game.bestCombo = 1;
+  game.rushMeter = 0;
+  game.rushTimer = 0;
+  game.coins = 0;
+  game.nearMisses = 0;
+  game.jumpDodges = 0;
   game.speed = BASE_SPEED;
   game.spawnTimer = 0.8;
   game.itemTimer = 1.7;
@@ -1251,6 +1724,9 @@ function resetGame() {
   game.statusText = "";
   game.jumpHeight = 0;
   game.jumpVelocity = 0;
+  game.jumpCooldown = 0;
+  game.jumpChain = 0;
+  game.groundTimer = 1;
   bikeRig.position.set(0, 0, 0);
   bikeRig.rotation.set(0, 0, 0);
   obstacles.splice(0).forEach((obstacle) => {
@@ -1295,31 +1771,49 @@ function hideGameOver() {
   gameOverOverlay.classList.remove("is-visible");
 }
 
+function updateLifeHud() {
+  const currentLives = Math.max(0, game.lives);
+  const maxLives = 4;
+  lifeValue.setAttribute("aria-label", `Life ${currentLives}`);
+  lifeValue.replaceChildren(
+    ...Array.from({ length: maxLives }, (_, index) => {
+      const dot = document.createElement("span");
+      dot.className = `life-dot${index < currentLives ? " is-filled" : ""}`;
+      return dot;
+    }),
+  );
+}
+
 function updateHud() {
   const difficulty = getDifficulty();
+  const mission = getMission();
+  const missionProgress = Math.min(
+    getMissionProgress(mission, difficulty),
+    mission.target,
+  );
   scoreValue.textContent = String(Math.floor(game.score)).padStart(4, "0");
-  distanceValue.textContent = game.distance.toFixed(1);
-  speedValue.textContent = String(Math.round(game.speed));
-  lifeValue.textContent = String(Math.max(0, game.lives));
+  levelValue.textContent = String(difficulty.level).padStart(4, "0");
+  rushValue.textContent =
+    game.rushTimer > 0 ? `${Math.ceil(game.rushTimer)}s` : `${Math.floor(game.rushMeter)}%`;
+  updateLifeHud();
   comboValue.textContent = `x${game.combo}`;
   highScoreValue.textContent = String(Math.floor(game.highScore)).padStart(
     4,
     "0",
   );
-  if (game.over) {
-    gameStatus.textContent = "GAME OVER";
-  } else if (game.statusTimer > 0) {
+  goalText.textContent = `${mission.label} ${missionProgress}/${mission.target}`;
+  if (game.statusTimer > 0) {
     gameStatus.textContent = game.statusText;
+  } else if (game.rushTimer > 0) {
+    gameStatus.textContent = `RUSH ${Math.ceil(game.rushTimer)}`;
   } else if (game.shieldTimer > 0) {
     gameStatus.textContent = `SHIELD ${Math.ceil(game.shieldTimer)}`;
-  } else if (!game.running) {
-    gameStatus.textContent = "READY";
   } else if (game.jumpHeight > 0.05) {
-    gameStatus.textContent = `JUMP LV ${difficulty.level + 1}`;
+    gameStatus.textContent = "JUMP";
   } else if (game.combo > 1) {
     gameStatus.textContent = `COMBO x${game.combo}`;
   } else {
-    gameStatus.textContent = `LV ${difficulty.level + 1}`;
+    gameStatus.textContent = "";
   }
 }
 
@@ -1417,12 +1911,18 @@ function publishDiagnostics() {
       combo: game.combo,
       bestCombo: game.bestCombo,
       comboTimer: Number(game.comboTimer.toFixed(2)),
+      rushMeter: Math.floor(game.rushMeter),
+      rushTimer: Number(game.rushTimer.toFixed(2)),
+      mission: getMission().label,
       distance: Number(game.distance.toFixed(2)),
       lives: game.lives,
       speed: Math.round(game.speed),
       shieldTimer: Number(game.shieldTimer.toFixed(2)),
       difficultyLevel: difficulty.level,
       difficultyFactor: Number(difficulty.factor.toFixed(3)),
+      difficultyChaos: Number(difficulty.chaos.toFixed(3)),
+      difficultyNightmare: Number(difficulty.nightmare.toFixed(3)),
+      difficultyAbsurd: Number(difficulty.absurd.toFixed(3)),
       targetSpeed: Math.round(getTargetSpeed(difficulty)),
       maxObstacles: getMaxObstacleCount(difficulty),
       obstacles: obstacles.length,
@@ -1431,6 +1931,8 @@ function publishDiagnostics() {
         .map((obstacle) => Number(obstacle.position.z.toFixed(2)))
         .slice(0, 5),
       jumpHeight: Number(game.jumpHeight.toFixed(3)),
+      jumpCooldown: Number(game.jumpCooldown.toFixed(2)),
+      jumpChain: Number(game.jumpChain.toFixed(2)),
       model: modelState.source,
       modelLoaded: Boolean(modelState.imported),
       modelWheelNodes: wheelMeshes.length,

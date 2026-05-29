@@ -37,13 +37,6 @@
       <canvas id="stage" aria-label="軽量自転車障害物回避3Dゲーム"></canvas>
 
       <header class="topbar">
-        <div class="brand">
-          <span class="brand-mark" aria-hidden="true"></span>
-          <div class="brand-copy">
-            <h1>Bicycle Dash</h1>
-            <p>Dodge & Combo</p>
-          </div>
-        </div>
         <div class="top-actions">
           <button
             class="button primary"
@@ -86,21 +79,26 @@
           <span class="metric-label">Best</span>
           <strong id="highScoreValue">0000</strong>
         </div>
-        <div class="metric">
-          <span class="metric-label">Distance</span>
-          <strong><span id="distanceValue">0.0</span> km</strong>
+        <div class="metric level-metric">
+          <span class="metric-label">Level</span>
+          <strong id="levelValue">0001</strong>
         </div>
-        <div class="metric">
-          <span class="metric-label">Speed</span>
-          <strong><span id="speedValue">26</span> km/h</strong>
+        <div class="metric rush-metric">
+          <span class="metric-label">Rush</span>
+          <strong id="rushValue">0%</strong>
         </div>
-        <div class="metric">
-          <span class="metric-label">Lives</span>
-          <strong id="lifeValue">3</strong>
+        <div class="metric life-metric">
+          <span class="metric-label">Life</span>
+          <strong id="lifeValue" class="life-track" aria-label="Life 3"></strong>
         </div>
       </section>
 
-      <div class="status-pill" id="gameStatus">READY</div>
+      <div class="goal-strip" aria-label="チャレンジ">
+        <span>Goal</span>
+        <strong id="goalText">COINを3個集める</strong>
+      </div>
+
+      <div class="status-pill" id="gameStatus"></div>
 
       <section
         class="game-over-overlay"

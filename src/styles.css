@@ -69,13 +69,13 @@ button {
 
 .topbar {
   position: fixed;
-  top: max(10px, env(safe-area-inset-top));
-  right: 10px;
-  left: 10px;
+  top: max(6px, env(safe-area-inset-top));
+  right: 6px;
+  left: 6px;
   z-index: 12;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
+  grid-template-columns: auto;
+  justify-content: end;
   pointer-events: none;
 }
 
@@ -85,6 +85,11 @@ button {
 .command-bar,
 .model-plaque,
 .status-pill,
+
+.status-pill:empty {
+  display: none;
+}
+
 .game-over-overlay {
   pointer-events: auto;
 }
@@ -92,10 +97,10 @@ button {
 .brand {
   display: flex;
   min-width: 0;
-  min-height: 48px;
+  min-height: 42px;
   align-items: center;
-  gap: 10px;
-  padding: 7px 10px 7px 7px;
+  gap: 9px;
+  padding: 6px 9px 6px 6px;
   border: 1px solid var(--line);
   border-radius: 8px;
   color: var(--ink);
@@ -106,8 +111,8 @@ button {
 
 .brand-mark {
   position: relative;
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   flex: 0 0 auto;
   border-radius: 8px;
   background: var(--dark);
@@ -168,14 +173,15 @@ h1 {
 
 .top-actions {
   display: grid;
-  grid-template-columns: 92px 92px;
-  gap: 8px;
+  grid-template-columns: 78px 78px;
+  gap: 6px;
+  pointer-events: auto;
 }
 
 .button {
   display: grid;
-  min-height: 48px;
-  padding: 0 10px;
+  min-height: 42px;
+  padding: 0 8px;
   border: 1px solid var(--line);
   border-radius: 8px;
   color: #ffffff;
@@ -187,6 +193,9 @@ h1 {
   line-height: 1;
   font-weight: 950;
   letter-spacing: 0;
+  pointer-events: auto;
+  touch-action: manipulation;
+  user-select: none;
 }
 
 .button:active,
@@ -222,25 +231,26 @@ h1 {
 
 .hud {
   position: fixed;
-  top: calc(max(10px, env(safe-area-inset-top)) + 58px);
-  right: 10px;
-  left: 10px;
+  top: max(6px, env(safe-area-inset-top));
+  right: auto;
+  left: 6px;
+  width: min(238px, calc(100vw - 20px));
   z-index: 5;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-  padding: 7px;
+  gap: 3px;
+  padding: 4px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(14, 18, 22, 0.54);
-  box-shadow: 0 12px 26px rgba(5, 9, 12, 0.18);
+  background: rgba(14, 18, 22, 0.42);
+  box-shadow: 0 10px 22px rgba(5, 9, 12, 0.14);
   backdrop-filter: blur(18px);
 }
 
 .metric {
   min-width: 0;
-  min-height: 50px;
-  padding: 8px 7px;
+  min-height: 32px;
+  padding: 4px 5px;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 8px;
   color: var(--ink);
@@ -256,6 +266,42 @@ h1 {
   background: rgba(208, 167, 79, 0.78);
 }
 
+.level-metric {
+  background: rgba(81, 121, 166, 0.74);
+}
+
+.rush-metric {
+  background: rgba(79, 168, 121, 0.74);
+}
+
+.life-metric {
+  background: rgba(185, 91, 82, 0.72);
+}
+
+.metric strong.life-track {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+  min-height: 10px;
+  margin-top: 4px;
+  overflow: visible;
+}
+
+.life-dot {
+  display: block;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+}
+
+.life-dot.is-filled {
+  background: #ff6f79;
+  box-shadow: 0 0 10px rgba(255, 111, 121, 0.28);
+}
+
 .high-score-metric {
   background: rgba(52, 127, 134, 0.78);
 }
@@ -265,7 +311,7 @@ h1 {
   overflow: hidden;
   color: inherit;
   opacity: 0.72;
-  font-size: 9px;
+  font-size: 8px;
   line-height: 1;
   font-weight: 950;
   letter-spacing: 0;
@@ -277,8 +323,8 @@ h1 {
 .metric strong {
   display: block;
   overflow: hidden;
-  margin-top: 7px;
-  font-size: 16px;
+  margin-top: 4px;
+  font-size: 12px;
   line-height: 1;
   font-weight: 950;
   letter-spacing: 0;
@@ -287,13 +333,52 @@ h1 {
 }
 
 .primary-metric strong {
-  font-size: 18px;
+  font-size: 13px;
+}
+
+.goal-strip {
+  position: fixed;
+  top: calc(max(6px, env(safe-area-inset-top)) + 90px);
+  right: auto;
+  left: 6px;
+  width: min(238px, calc(100vw - 20px));
+  z-index: 10;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-height: 30px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: #ffffff;
+  background: rgba(17, 22, 27, 0.42);
+  box-shadow: 0 8px 18px rgba(5, 9, 12, 0.14);
+  backdrop-filter: blur(18px);
+}
+
+.goal-strip span {
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.goal-strip strong {
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 950;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .status-pill {
   position: fixed;
-  top: calc(max(10px, env(safe-area-inset-top)) + 184px);
-  right: 10px;
+  top: calc(max(6px, env(safe-area-inset-top)) + 90px);
+  right: 6px;
   z-index: 11;
   min-width: 96px;
   max-width: calc(100vw - 20px);
@@ -301,7 +386,7 @@ h1 {
   border: 1px solid var(--line);
   border-radius: 8px;
   color: #ffffff;
-  background: rgba(17, 22, 27, 0.64);
+  background: rgba(17, 22, 27, 0.58);
   box-shadow: var(--shadow);
   backdrop-filter: blur(18px);
   font-size: 12px;
@@ -428,14 +513,21 @@ h1 {
   }
 
   .hud {
-    top: 86px;
+    top: 12px;
+    right: auto;
+    left: 18px;
+    width: min(420px, calc(100vw - 36px));
+  }
+
+  .goal-strip {
+    top: 142px;
     right: auto;
     left: 18px;
     width: min(420px, calc(100vw - 36px));
   }
 
   .status-pill {
-    top: 86px;
+    top: 142px;
     right: 18px;
   }
 
@@ -477,22 +569,28 @@ h1 {
   }
 
   .hud {
-    top: calc(max(10px, env(safe-area-inset-top)) + 56px);
+    top: max(6px, env(safe-area-inset-top));
+    width: min(202px, calc(100vw - 184px));
   }
 
   .metric {
-    min-height: 46px;
-    padding: 7px 5px;
+    min-height: 32px;
+    padding: 4px 4px;
   }
 
   .metric strong,
   .primary-metric strong {
-    margin-top: 6px;
-    font-size: 14px;
+    margin-top: 4px;
+    font-size: 12px;
+  }
+
+  .goal-strip {
+    top: calc(max(6px, env(safe-area-inset-top)) + 88px);
+    width: min(202px, calc(100vw - 184px));
   }
 
   .status-pill {
-    top: calc(max(10px, env(safe-area-inset-top)) + 178px);
+    top: calc(max(6px, env(safe-area-inset-top)) + 88px);
   }
 }
 
