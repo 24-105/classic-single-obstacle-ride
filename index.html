@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Classic Single Obstacle Ride</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%2316181d'/%3E%3Ccircle cx='19' cy='43' r='8' fill='none' stroke='%23f1f4f2' stroke-width='4'/%3E%3Ccircle cx='47' cy='43' r='8' fill='none' stroke='%23f1f4f2' stroke-width='4'/%3E%3Cpath d='M18 42h13l7-13h8l4 13M28 41l7-11' fill='none' stroke='%23c9a45f' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M27 30h17' stroke='%23777d82' stroke-width='6' stroke-linecap='round'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="./src/styles.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./vendor/three.module.js",
+          "three/addons/": "./vendor/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <main id="app">
+      <canvas id="stage" aria-label="クラシックバイク障害物回避3Dゲーム"></canvas>
+
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <div class="brand-copy">
+            <h1>Classic Ride</h1>
+            <p>Obstacle Ride</p>
+          </div>
+        </div>
+        <div class="top-actions">
+          <button class="button primary" id="startButton" type="button">Start</button>
+          <button class="button" id="resetButton" type="button">Reset</button>
+          <button class="button icon-button" id="captureButton" type="button" aria-label="画像保存" title="画像保存">
+            <span aria-hidden="true">↓</span>
+          </button>
+        </div>
+      </header>
+
+      <section class="hud" aria-label="ゲーム状態">
+        <div class="metric primary-metric">
+          <span class="metric-label">Score</span>
+          <strong id="scoreValue">0000</strong>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Distance</span>
+          <strong><span id="distanceValue">0.0</span> km</strong>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Speed</span>
+          <strong><span id="speedValue">52</span> km/h</strong>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Lives</span>
+          <strong id="lifeValue">3</strong>
+        </div>
+      </section>
+
+      <div class="status-pill" id="gameStatus">Ready</div>
+
+      <section class="game-over-overlay" id="gameOverOverlay" aria-live="polite" aria-hidden="true">
+        <div class="game-over-card">
+          <span>Game Over</span>
+          <strong id="finalScoreValue">0000</strong>
+        </div>
+      </section>
+
+      <nav class="command-bar" aria-label="ライド操作">
+        <button class="command-button" id="leftButton" type="button" aria-label="左へ" title="左へ">
+          <span aria-hidden="true">←</span>
+        </button>
+        <button class="command-button jump-command" id="jumpButton" type="button" aria-label="ジャンプ" title="ジャンプ">
+          <span aria-hidden="true">↑</span>
+        </button>
+        <button class="command-button" id="rightButton" type="button" aria-label="右へ" title="右へ">
+          <span aria-hidden="true">→</span>
+        </button>
+      </nav>
+
+      <footer class="model-plaque" aria-label="車体情報">
+        <span>Classic single-cylinder standard</span>
+        <span>2021 dark gray / full normal reference</span>
+      </footer>
+    </main>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
