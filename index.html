@@ -9,6 +9,20 @@
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%2316181d'/%3E%3Ccircle cx='19' cy='43' r='8' fill='none' stroke='%23f1f4f2' stroke-width='4'/%3E%3Ccircle cx='47' cy='43' r='8' fill='none' stroke='%23f1f4f2' stroke-width='4'/%3E%3Cpath d='M18 42h13l7-13h8l4 13M28 41l7-11' fill='none' stroke='%23c9a45f' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M27 30h17' stroke='%23777d82' stroke-width='6' stroke-linecap='round'/%3E%3C/svg%3E"
     />
     <link rel="stylesheet" href="./src/styles.css" />
+    <!-- Google Analytics -->
+    <script
+      async
+      src="https://www.googletagmanager.com/gtag/js?id=G-GMW7KRPNFQ"
+    ></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag() {
+        dataLayer.push(arguments);
+      }
+      gtag("js", new Date());
+
+      gtag("config", "G-GMW7KRPNFQ");
+    </script>
     <script type="importmap">
       {
         "imports": {
@@ -31,9 +45,29 @@
           </div>
         </div>
         <div class="top-actions">
-          <button class="button primary" id="startButton" type="button" aria-label="スタート">▶ START</button>
-          <button class="button reset-button" id="resetButton" type="button" aria-label="リセット">↻ RESET</button>
-          <button class="button icon-button" id="captureButton" type="button" aria-label="画像保存" title="画像保存">
+          <button
+            class="button primary"
+            id="startButton"
+            type="button"
+            aria-label="スタート"
+          >
+            ▶ START
+          </button>
+          <button
+            class="button reset-button"
+            id="resetButton"
+            type="button"
+            aria-label="リセット"
+          >
+            ↻ RESET
+          </button>
+          <button
+            class="button icon-button"
+            id="captureButton"
+            type="button"
+            aria-label="画像保存"
+            title="画像保存"
+          >
             <span aria-hidden="true">↓</span>
           </button>
         </div>
@@ -68,7 +102,12 @@
 
       <div class="status-pill" id="gameStatus">READY</div>
 
-      <section class="game-over-overlay" id="gameOverOverlay" aria-live="polite" aria-hidden="true">
+      <section
+        class="game-over-overlay"
+        id="gameOverOverlay"
+        aria-live="polite"
+        aria-hidden="true"
+      >
         <div class="game-over-card">
           <span>Game Over</span>
           <strong id="finalScoreValue">0000</strong>
@@ -76,13 +115,31 @@
       </section>
 
       <nav class="command-bar" aria-label="ライド操作">
-        <button class="command-button" id="leftButton" type="button" aria-label="左へ" title="左へ">
+        <button
+          class="command-button"
+          id="leftButton"
+          type="button"
+          aria-label="左へ"
+          title="左へ"
+        >
           <span aria-hidden="true">←</span>
         </button>
-        <button class="command-button jump-command" id="jumpButton" type="button" aria-label="ジャンプ" title="ジャンプ">
+        <button
+          class="command-button jump-command"
+          id="jumpButton"
+          type="button"
+          aria-label="ジャンプ"
+          title="ジャンプ"
+        >
           <span aria-hidden="true">↑</span>
         </button>
-        <button class="command-button" id="rightButton" type="button" aria-label="右へ" title="右へ">
+        <button
+          class="command-button"
+          id="rightButton"
+          type="button"
+          aria-label="右へ"
+          title="右へ"
+        >
           <span aria-hidden="true">→</span>
         </button>
       </nav>
