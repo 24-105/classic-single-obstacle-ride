@@ -19,9 +19,11 @@ const goalText = document.querySelector("#goalText");
 const gameStatus = document.querySelector("#gameStatus");
 const gameOverOverlay = document.querySelector("#gameOverOverlay");
 const finalScoreValue = document.querySelector("#finalScoreValue");
+const finalBestScoreValue = document.querySelector("#finalBestScoreValue");
 
 const lanes = [1.35, 0, -1.35];
 const game = {
+  started: false,
   running: false,
   over: false,
   lane: 1,
@@ -97,14 +99,14 @@ const JUMP_CHAIN_RECOVERY = 0.82;
 const MAX_JUMP_CHAIN = 5;
 
 const missions = [
-  { label: "COINを3個集める", type: "coins", target: 3, reward: 900 },
-  { label: "NEARを3回決める", type: "nearMisses", target: 3, reward: 1200 },
-  { label: "PERFECTを3回決める", type: "perfects", target: 3, reward: 2100 },
-  { label: "JUMP回避を4回決める", type: "jumpDodges", target: 4, reward: 1500 },
-  { label: "COMBO x8到達", type: "combo", target: 8, reward: 1800 },
-  { label: "RISKで500点稼ぐ", type: "riskScore", target: 500, reward: 2300 },
-  { label: "LV 25到達", type: "level", target: 25, reward: 2400 },
-  { label: "RUSH中に走り切る", type: "rush", target: 1, reward: 2600 },
+  { label: "コインを3個集める", type: "coins", target: 3, reward: 900 },
+  { label: "ニアミスを3回決める", type: "nearMisses", target: 3, reward: 1200 },
+  { label: "パーフェクトを3回決める", type: "perfects", target: 3, reward: 2100 },
+  { label: "ジャンプ回避を4回決める", type: "jumpDodges", target: 4, reward: 1500 },
+  { label: "コンボ×8到達", type: "combo", target: 8, reward: 1800 },
+  { label: "危険ルートで500点稼ぐ", type: "riskScore", target: 500, reward: 2300 },
+  { label: "レベル25到達", type: "level", target: 25, reward: 2400 },
+  { label: "ラッシュ中に走り切る", type: "rush", target: 1, reward: 2600 },
 ];
 
 const renderer = new THREE.WebGLRenderer({
@@ -142,6 +144,8 @@ const diagnostics = { node: null, frame: 0 };
 const cameraTarget = new THREE.Vector3();
 const defaultSceneColor = new THREE.Color("#dce6e8");
 let hudRefreshTimer = 0;
+let suppressNextSyntheticClick = false;
+let syntheticClickTimer = 0;
 const wheelMeshes = [];
 const roadMarkers = [];
 const roadsideObjects = [];
@@ -190,10 +194,13 @@ function initialize() {
 }
 
 function bindPress(element, handler) {
-  let lastPointerPress = 0;
   const run = (event) => {
     event.preventDefault();
-    lastPointerPress = performance.now();
+    suppressNextSyntheticClick = true;
+    window.clearTimeout(syntheticClickTimer);
+    syntheticClickTimer = window.setTimeout(() => {
+      suppressNextSyntheticClick = false;
+    }, 700);
     handler();
   };
   element.addEventListener(
@@ -203,7 +210,9 @@ function bindPress(element, handler) {
   );
   element.addEventListener("click", (event) => {
     event.preventDefault();
-    if (performance.now() - lastPointerPress < 350) {
+    if (suppressNextSyntheticClick) {
+      suppressNextSyntheticClick = false;
+      window.clearTimeout(syntheticClickTimer);
       return;
     }
     handler();
@@ -238,8 +247,39 @@ function setStatusMessage(text, seconds = 0.9) {
 }
 
 function setStartButtonState() {
-  startButton.textContent = game.running ? "Ⅱ PAUSE" : "▶ START";
+  if (game.over) {
+    startButton.textContent = "▶ リトライ";
+  } else if (game.running) {
+    startButton.textContent = "Ⅱ ポーズ";
+  } else {
+    startButton.textContent = game.started ? "▶ ポーズ解除" : "▶ スタート";
+  }
   startButton.classList.toggle("is-running", game.running);
+  resetButton.textContent = "↻ リトライ";
+  resetButton.setAttribute("aria-label", "リトライ");
+  resetButton.hidden = !game.started || game.running || game.over;
+}
+
+function formatPaddedNumber(value, minDigits = 4) {
+  return String(Math.max(0, Math.floor(value))).padStart(minDigits, "0");
+}
+
+function setNumberText(
+  element,
+  value,
+  { minDigits = 4, baseSize = 12, minSize = 7, pxPerDigit = 48 } = {},
+) {
+  const text = formatPaddedNumber(value, minDigits);
+  element.textContent = text;
+  element.dataset.digits = String(text.length);
+  if (text.length <= minDigits) {
+    element.style.fontSize = "";
+    return;
+  }
+  element.style.fontSize = `${Math.max(
+    minSize,
+    Math.min(baseSize, pxPerDigit / text.length),
+  )}px`;
 }
 
 function createMaterials() {
@@ -1237,21 +1277,21 @@ function applyItem(item) {
     game.lives = Math.min(5, game.lives + 1);
     bumpCombo(1);
     chargeRush(8);
-    setStatusMessage("+LIFE");
+    setStatusMessage("+ライフ");
   } else if (type === "shield") {
     game.shieldTimer = 4.8;
     bumpCombo(1);
     chargeRush(14);
-    setStatusMessage("SHIELD");
+    setStatusMessage("シールド");
   } else if (type === "star") {
     startRush();
     bumpCombo(3);
-    awardScore(600 + getDifficulty().level * 10, "RUSH");
+    awardScore(600 + getDifficulty().level * 10, "ラッシュ");
   } else {
     game.coins += 1;
     bumpCombo(1);
     chargeRush(10);
-    awardScore(180 + getDifficulty().level * 8, "COIN");
+    awardScore(180 + getDifficulty().level * 8, "コイン");
   }
   checkMission();
   updateHighScore();
@@ -1372,11 +1412,11 @@ function startRush() {
   game.rushMeter = 0;
   game.rushTimer = Math.max(game.rushTimer, RUSH_DURATION);
   game.shieldTimer = Math.max(game.shieldTimer, RUSH_DURATION);
-  setStatusMessage("RUSH MODE", 1.2);
+  setStatusMessage("ラッシュ発動", 1.2);
 }
 
 function getRiskLaneLabel(lane = game.riskLane) {
-  return ["RIGHT", "CENTER", "LEFT"][lane] || "";
+  return ["右", "中央", "左"][lane] || "";
 }
 
 function isOnRiskRoute() {
@@ -1405,7 +1445,7 @@ function awardScore(base, label = "") {
   const amount = Math.round(base * game.combo * rushBonus * riskBonus * eventBonus);
   addScore(amount, riskBonus > 1);
   if (label) {
-    const prefix = riskBonus > 1 ? "RISK " : "";
+    const prefix = riskBonus > 1 ? "危険 " : "";
     setStatusMessage(`${prefix}${label} +${amount}`);
   }
   updateHighScore();
@@ -1442,7 +1482,7 @@ function checkMission() {
   game.riskScore = 0;
   game.bestCombo = game.combo;
   chargeRush(28);
-  setStatusMessage(`GOAL +${reward}`, 1.35);
+  setStatusMessage(`目標達成 +${reward}`, 1.35);
   updateHighScore();
 }
 
@@ -1480,25 +1520,25 @@ function getPassResult(obstacle, lateral) {
     game.jumpHeight < obstacle.userData.airHitMin * 0.45;
 
   if (nearMiss && nearGap < PERFECT_NEAR_MARGIN) {
-    return { kind: "perfect", label: "PERFECT", base: 320 };
+    return { kind: "perfect", label: "パーフェクト", base: 320 };
   }
   if (
     jumpedObstacle &&
     game.jumpHeight - obstacle.userData.jumpClear < PERFECT_JUMP_WINDOW
   ) {
-    return { kind: "perfectJump", label: "PERFECT", base: 300 };
+    return { kind: "perfectJump", label: "パーフェクト", base: 300 };
   }
   if (duckedAirGate && game.jumpHeight < PERFECT_DUCK_HEIGHT) {
-    return { kind: "perfectLow", label: "PERFECT", base: 310 };
+    return { kind: "perfectLow", label: "パーフェクト", base: 310 };
   }
   if (nearMiss) {
-    return { kind: "near", label: "NEAR", base: 150 };
+    return { kind: "near", label: "ニアミス", base: 150 };
   }
   if (jumpedObstacle) {
-    return { kind: "jump", label: "JUMP", base: 130 };
+    return { kind: "jump", label: "ジャンプ", base: 130 };
   }
   if (duckedAirGate) {
-    return { kind: "low", label: "LOW", base: 145 };
+    return { kind: "low", label: "低姿勢", base: 145 };
   }
   return null;
 }
@@ -1522,7 +1562,7 @@ function applyPassReward(result) {
     chargeRush(18);
     awardScore(result.base + game.perfectChain * 24, result.label);
     if (game.perfectChain > 0 && game.perfectChain % 3 === 0) {
-      awardScore(220 + game.perfectChain * 20, "CHAIN");
+      awardScore(220 + game.perfectChain * 20, "連鎖");
     }
   } else {
     game.perfectChain = 0;
@@ -1549,7 +1589,7 @@ function applySlipTrap() {
   game.invulnerable = 0.16;
   game.perfectChain = 0;
   resetCombo();
-  setStatusMessage("SLIP", 0.85);
+  setStatusMessage("スリップ", 0.85);
 }
 
 function chooseRiskLane() {
@@ -1560,7 +1600,7 @@ function chooseRiskLane() {
   }
   game.riskLane = nextLane;
   game.riskTimer = RISK_ROUTE_DURATION;
-  setStatusMessage(`RISK ${getRiskLaneLabel()} +45%`, 1.3);
+  setStatusMessage(`危険ルート ${getRiskLaneLabel()} +45%`, 1.3);
 }
 
 function updateRiskRoute(delta, difficulty) {
@@ -1597,8 +1637,8 @@ function updateRiskRouteMarker() {
 }
 
 function getEventLabel(type = game.eventType) {
-  if (type === "gust") return "GUST";
-  if (type === "traffic") return "RUSH HOUR";
+  if (type === "gust") return "突風";
+  if (type === "traffic") return "混雑";
   return "";
 }
 
@@ -1609,7 +1649,7 @@ function startRandomEvent(difficulty) {
   game.eventTimer =
     THREE.MathUtils.randFloat(RANDOM_EVENT_MIN_DURATION, RANDOM_EVENT_MAX_DURATION) +
     difficulty.nightmare * 3;
-  setStatusMessage(`${getEventLabel()} EVENT`, 1.25);
+  setStatusMessage(`${getEventLabel()}発生`, 1.25);
 }
 
 function updateRandomEvent(delta, difficulty) {
@@ -1625,7 +1665,7 @@ function updateRandomEvent(delta, difficulty) {
         10.5,
         16 - difficulty.chaos * 3.2,
       );
-      setStatusMessage("CLEAR", 0.7);
+      setStatusMessage("解除", 0.7);
     }
   } else {
     game.eventCooldown -= delta;
@@ -1760,7 +1800,7 @@ function updateGame(delta) {
         game.shieldTimer = 0;
         bumpCombo(1);
         chargeRush(8);
-        awardScore(120, "GUARD");
+        awardScore(120, "防御");
         checkMission();
       } else if (hitType === "slip") {
         obstacle.userData.hit = true;
@@ -1854,7 +1894,7 @@ function registerHit() {
   game.perfectChain = 0;
   resetCombo();
   if (game.lives > 0) {
-    setStatusMessage("HIT", 0.8);
+    setStatusMessage("被弾", 0.8);
   } else {
     gameStatus.textContent = "";
   }
@@ -1868,7 +1908,7 @@ function registerHit() {
 
 function moveLane(direction) {
   if (game.over) {
-    resetGame();
+    return;
   }
   game.targetLane = THREE.MathUtils.clamp(
     game.targetLane + direction,
@@ -1879,16 +1919,17 @@ function moveLane(direction) {
 
 function jump() {
   if (game.over) {
-    resetGame();
+    return;
   }
   if (game.jumpHeight > 0.02 || game.jumpVelocity > 0.1) {
     return;
   }
   if (game.jumpCooldown > 0) {
-    setStatusMessage("LANDING", 0.35);
+    setStatusMessage("着地待ち", 0.35);
     return;
   }
   game.running = true;
+  game.started = true;
   game.jumpChain = Math.min(MAX_JUMP_CHAIN, Math.floor(game.jumpChain) + 1);
   const fatigue = game.jumpChain / MAX_JUMP_CHAIN;
   game.jumpVelocity = THREE.MathUtils.lerp(
@@ -1905,10 +1946,14 @@ function toggleGame() {
     resetGame();
   }
   game.running = !game.running;
+  if (game.running) {
+    game.started = true;
+  }
   setStartButtonState();
 }
 
 function resetGame() {
+  game.started = false;
   game.running = false;
   game.over = false;
   game.lane = 1;
@@ -1975,14 +2020,23 @@ function handleKeydown(event) {
   ) {
     event.preventDefault();
     jump();
-  } else if (event.key.toLowerCase() === "p") {
+  } else if (event.key.toLowerCase() === "p" && !game.over) {
     toggleGame();
   }
 }
 
 function showGameOver() {
   updateHighScore();
-  finalScoreValue.textContent = String(Math.floor(game.score)).padStart(4, "0");
+  setNumberText(finalScoreValue, game.score, {
+    baseSize: 42,
+    minSize: 18,
+    pxPerDigit: 260,
+  });
+  setNumberText(finalBestScoreValue, game.highScore, {
+    baseSize: 32,
+    minSize: 15,
+    pxPerDigit: 210,
+  });
   gameOverOverlay.setAttribute("aria-hidden", "false");
   gameOverOverlay.classList.add("is-visible");
 }
@@ -1995,7 +2049,7 @@ function hideGameOver() {
 function updateLifeHud() {
   const currentLives = Math.max(0, game.lives);
   const maxLives = 5;
-  lifeValue.setAttribute("aria-label", `Life ${currentLives}`);
+  lifeValue.setAttribute("aria-label", `ライフ ${currentLives}`);
   lifeValue.replaceChildren(
     ...Array.from({ length: maxLives }, (_, index) => {
       const dot = document.createElement("span");
@@ -2012,31 +2066,28 @@ function updateHud() {
     getMissionProgress(mission, difficulty),
     mission.target,
   );
-  scoreValue.textContent = String(Math.floor(game.score)).padStart(4, "0");
-  levelValue.textContent = String(difficulty.level).padStart(4, "0");
+  setNumberText(scoreValue, game.score, { baseSize: 13, pxPerDigit: 46 });
+  setNumberText(levelValue, difficulty.level, { baseSize: 12, pxPerDigit: 46 });
   rushValue.textContent =
-    game.rushTimer > 0 ? `${Math.ceil(game.rushTimer)}s` : `${Math.floor(game.rushMeter)}%`;
+    game.rushTimer > 0 ? `${Math.ceil(game.rushTimer)}秒` : `${Math.floor(game.rushMeter)}%`;
   updateLifeHud();
-  comboValue.textContent = `x${game.combo}`;
-  highScoreValue.textContent = String(Math.floor(game.highScore)).padStart(
-    4,
-    "0",
-  );
+  comboValue.textContent = `×${game.combo}`;
+  setNumberText(highScoreValue, game.highScore, { baseSize: 12, pxPerDigit: 46 });
   goalText.textContent = `${mission.label} ${missionProgress}/${mission.target}`;
   if (game.statusTimer > 0) {
     gameStatus.textContent = game.statusText;
   } else if (game.rushTimer > 0) {
-    gameStatus.textContent = `RUSH ${Math.ceil(game.rushTimer)}`;
+    gameStatus.textContent = `ラッシュ ${Math.ceil(game.rushTimer)}秒`;
   } else if (game.shieldTimer > 0) {
-    gameStatus.textContent = `SHIELD ${Math.ceil(game.shieldTimer)}`;
+    gameStatus.textContent = `シールド ${Math.ceil(game.shieldTimer)}秒`;
   } else if (game.eventTimer > 0) {
-    gameStatus.textContent = `${getEventLabel()} ${Math.ceil(game.eventTimer)}`;
+    gameStatus.textContent = `${getEventLabel()} ${Math.ceil(game.eventTimer)}秒`;
   } else if (game.riskTimer > 0) {
-    gameStatus.textContent = `RISK ${getRiskLaneLabel()}`;
+    gameStatus.textContent = `危険 ${getRiskLaneLabel()}`;
   } else if (game.jumpHeight > 0.05) {
-    gameStatus.textContent = "JUMP";
+    gameStatus.textContent = "ジャンプ";
   } else if (game.combo > 1) {
-    gameStatus.textContent = `COMBO x${game.combo}`;
+    gameStatus.textContent = `コンボ ×${game.combo}`;
   } else {
     gameStatus.textContent = "";
   }

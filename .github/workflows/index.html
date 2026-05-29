@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Light Bicycle Dash</title>
+    <title>自転車ダッシュ</title>
     <link
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%2316181d'/%3E%3Ccircle cx='19' cy='43' r='8' fill='none' stroke='%23f1f4f2' stroke-width='4'/%3E%3Ccircle cx='47' cy='43' r='8' fill='none' stroke='%23f1f4f2' stroke-width='4'/%3E%3Cpath d='M18 42h13l7-13h8l4 13M28 41l7-11' fill='none' stroke='%23c9a45f' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M27 30h17' stroke='%23777d82' stroke-width='6' stroke-linecap='round'/%3E%3C/svg%3E"
@@ -44,15 +44,15 @@
             type="button"
             aria-label="スタート"
           >
-            ▶ START
+            ▶ スタート
           </button>
           <button
             class="button reset-button"
             id="resetButton"
             type="button"
-            aria-label="リセット"
+            aria-label="リトライ"
           >
-            ↻ RESET
+            ↻ リトライ
           </button>
           <button
             class="button icon-button"
@@ -68,34 +68,34 @@
 
       <section class="hud" aria-label="ゲーム状態">
         <div class="metric primary-metric">
-          <span class="metric-label">Score</span>
+          <span class="metric-label">スコア</span>
           <strong id="scoreValue">0000</strong>
         </div>
         <div class="metric combo-metric">
-          <span class="metric-label">Combo</span>
-          <strong id="comboValue">x1</strong>
+          <span class="metric-label">コンボ</span>
+          <strong id="comboValue">×1</strong>
         </div>
         <div class="metric high-score-metric">
-          <span class="metric-label">Best</span>
+          <span class="metric-label">ベスト</span>
           <strong id="highScoreValue">0000</strong>
         </div>
         <div class="metric level-metric">
-          <span class="metric-label">Level</span>
+          <span class="metric-label">レベル</span>
           <strong id="levelValue">0001</strong>
         </div>
         <div class="metric rush-metric">
-          <span class="metric-label">Rush</span>
+          <span class="metric-label">ラッシュ</span>
           <strong id="rushValue">0%</strong>
         </div>
         <div class="metric life-metric">
-          <span class="metric-label">Life</span>
-          <strong id="lifeValue" class="life-track" aria-label="Life 4"></strong>
+          <span class="metric-label">ライフ</span>
+          <strong id="lifeValue" class="life-track" aria-label="ライフ 4"></strong>
         </div>
       </section>
 
       <div class="goal-strip" aria-label="チャレンジ">
-        <span>Goal</span>
-        <strong id="goalText">COINを3個集める</strong>
+        <span>目標</span>
+        <strong id="goalText">コインを3個集める</strong>
       </div>
 
       <div class="status-pill" id="gameStatus"></div>
@@ -107,8 +107,17 @@
         aria-hidden="true"
       >
         <div class="game-over-card">
-          <span>Game Over</span>
-          <strong id="finalScoreValue">0000</strong>
+          <span>ゲームオーバー</span>
+          <div class="game-over-stats">
+            <div class="game-over-stat">
+              <em>スコア</em>
+              <strong id="finalScoreValue">0000</strong>
+            </div>
+            <div class="game-over-stat">
+              <em>ベスト</em>
+              <strong id="finalBestScoreValue">0000</strong>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -143,8 +152,8 @@
       </nav>
 
       <footer class="model-plaque" aria-label="車体情報">
-        <span>Light city bicycle</span>
-        <span>mobile browser game</span>
+        <span>軽量自転車</span>
+        <span>スマホブラウザゲーム</span>
       </footer>
     </main>
 
