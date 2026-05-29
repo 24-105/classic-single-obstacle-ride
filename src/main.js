@@ -13,11 +13,13 @@ const scoreValue = document.querySelector("#scoreValue");
 const distanceValue = document.querySelector("#distanceValue");
 const speedValue = document.querySelector("#speedValue");
 const lifeValue = document.querySelector("#lifeValue");
+const comboValue = document.querySelector("#comboValue");
+const highScoreValue = document.querySelector("#highScoreValue");
 const gameStatus = document.querySelector("#gameStatus");
 const gameOverOverlay = document.querySelector("#gameOverOverlay");
 const finalScoreValue = document.querySelector("#finalScoreValue");
 
-const lanes = [-1.72, 0, 1.72];
+const lanes = [1.35, 0, -1.35];
 const game = {
   running: false,
   over: false,
@@ -27,9 +29,17 @@ const game = {
   score: 0,
   distance: 0,
   lives: 3,
-  speed: 52,
+  combo: 1,
+  comboTimer: 0,
+  bestCombo: 1,
+  highScore: readSessionHighScore(),
+  speed: 26,
   spawnTimer: 1.1,
+  itemTimer: 2.1,
   invulnerable: 0,
+  shieldTimer: 0,
+  statusTimer: 0,
+  statusText: "",
   jumpHeight: 0,
   jumpVelocity: 0,
   lean: 0,
@@ -40,11 +50,13 @@ const DIAGNOSTICS_FRAME_INTERVAL = 120;
 const ROAD_MARKER_ROWS = 14;
 const ROADSIDE_POST_ROWS = 12;
 const BUILDING_COUNT = 8;
-const BASE_SPEED = 52;
-const MAX_SPEED = 150;
-const MAX_OBSTACLES = 8;
+const BASE_SPEED = 26;
+const MAX_SPEED = 64;
+const MAX_OBSTACLES = 7;
 const DIFFICULTY_SCORE_STEP = 900;
 const MAX_DIFFICULTY_LEVEL = 12;
+const MAX_COMBO = 9;
+const COMBO_WINDOW = 4.2;
 const FRONT_SPAWN_Z = 62;
 const BACK_DESPAWN_Z = -12;
 const PASS_Z = -1.28;
@@ -66,8 +78,8 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color("#dce6e8");
 scene.fog = new THREE.Fog("#dce6e8", 14, 48);
 
-const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 140);
-camera.position.set(3.6, 2.15, -7.2);
+const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 140);
+camera.position.set(0, 2.8, -11.2);
 
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
@@ -77,7 +89,7 @@ controls.minDistance = 3.1;
 controls.maxDistance = 13;
 controls.minPolarAngle = 0.12;
 controls.maxPolarAngle = Math.PI * 0.82;
-controls.target.set(0, 1.16, 1.15);
+controls.target.set(0, 1.2, 1.1);
 
 const clock = new THREE.Clock();
 const diagnostics = { node: null, frame: 0 };
@@ -87,8 +99,9 @@ const wheelMeshes = [];
 const roadMarkers = [];
 const roadsideObjects = [];
 const obstacles = [];
+const items = [];
 const modelState = {
-  source: "procedural-mobile",
+  source: "light-bicycle",
   imported: null,
   loadError: "",
 };
@@ -106,7 +119,7 @@ const materials = createMaterials();
 createLights();
 createRoad();
 createEnvironment();
-createClassicSingle();
+createLightBicycle();
 createRider();
 bikeGroup.rotation.y = Math.PI;
 riderGroup.rotation.y = Math.PI;
@@ -120,8 +133,8 @@ function initialize() {
   bindPress(startButton, toggleGame);
   bindPress(resetButton, resetGame);
   bindPress(captureButton, captureScene);
-  bindPress(leftButton, () => moveLane(1));
-  bindPress(rightButton, () => moveLane(-1));
+  bindPress(leftButton, () => moveLane(-1));
+  bindPress(rightButton, () => moveLane(1));
   bindPress(jumpButton, jump);
 
   resetGame();
@@ -139,31 +152,126 @@ function bindPress(element, handler) {
   );
 }
 
+function readSessionHighScore() {
+  try {
+    const value = Number(
+      window.sessionStorage.getItem("bicycle-dash-high-score") || 0,
+    );
+    return Number.isFinite(value) ? value : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function saveSessionHighScore(score) {
+  try {
+    window.sessionStorage.setItem(
+      "bicycle-dash-high-score",
+      String(Math.floor(score)),
+    );
+  } catch {
+    // Storage can be unavailable in strict private browsing modes.
+  }
+}
+
+function setStatusMessage(text, seconds = 0.9) {
+  game.statusText = text;
+  game.statusTimer = seconds;
+}
+
+function setStartButtonState() {
+  startButton.textContent = game.running ? "Ⅱ PAUSE" : "▶ START";
+  startButton.classList.toggle("is-running", game.running);
+}
+
 function createMaterials() {
   const envMapIntensity = 0.7;
   return {
-    asphalt: new THREE.MeshStandardMaterial({ color: "#2f353b", roughness: 0.9, metalness: 0.02 }),
-    lane: new THREE.MeshStandardMaterial({ color: "#f1ead8", roughness: 0.45, metalness: 0.04 }),
-    shoulder: new THREE.MeshStandardMaterial({ color: "#737b82", roughness: 0.72, metalness: 0.06 }),
-    grass: new THREE.MeshStandardMaterial({ color: "#becac1", roughness: 0.95, metalness: 0.01 }),
-    rubber: new THREE.MeshStandardMaterial({ color: "#06070a", roughness: 0.58, metalness: 0.02 }),
-    tireSide: new THREE.MeshStandardMaterial({ color: "#11141a", roughness: 0.78, metalness: 0.02 }),
-    chrome: new THREE.MeshStandardMaterial({ color: "#eff4f5", roughness: 0.13, metalness: 0.98, envMapIntensity }),
-    rim: new THREE.MeshStandardMaterial({ color: "#dce3e7", roughness: 0.16, metalness: 0.96, envMapIntensity }),
-    spoke: new THREE.MeshStandardMaterial({ color: "#f3f6f7", roughness: 0.2, metalness: 0.9, envMapIntensity }),
-    frame: new THREE.MeshStandardMaterial({ color: "#14171c", roughness: 0.38, metalness: 0.56, envMapIntensity }),
-    tank: new THREE.MeshStandardMaterial({ color: "#757c82", roughness: 0.22, metalness: 0.66, envMapIntensity }),
-    tankDark: new THREE.MeshStandardMaterial({ color: "#24282d", roughness: 0.34, metalness: 0.5, envMapIntensity }),
-    pinstripe: new THREE.MeshStandardMaterial({ color: "#e7dec2", roughness: 0.34, metalness: 0.1 }),
-    engine: new THREE.MeshStandardMaterial({ color: "#7f878d", roughness: 0.3, metalness: 0.88, envMapIntensity }),
-    engineDark: new THREE.MeshStandardMaterial({ color: "#16191e", roughness: 0.34, metalness: 0.7, envMapIntensity }),
-    leather: new THREE.MeshStandardMaterial({ color: "#121418", roughness: 0.52, metalness: 0.08 }),
-    jacket: new THREE.MeshStandardMaterial({ color: "#24282e", roughness: 0.54, metalness: 0.08 }),
-    jacketPanel: new THREE.MeshStandardMaterial({ color: "#333941", roughness: 0.48, metalness: 0.12 }),
-    denim: new THREE.MeshStandardMaterial({ color: "#253847", roughness: 0.66, metalness: 0.03 }),
-    glove: new THREE.MeshStandardMaterial({ color: "#0b0d11", roughness: 0.45, metalness: 0.08 }),
-    boot: new THREE.MeshStandardMaterial({ color: "#090b0e", roughness: 0.52, metalness: 0.12 }),
-    helmet: new THREE.MeshStandardMaterial({ color: "#101218", roughness: 0.22, metalness: 0.48, envMapIntensity }),
+    asphalt: new THREE.MeshStandardMaterial({
+      color: "#2f353b",
+      roughness: 0.9,
+      metalness: 0.02,
+    }),
+    lane: new THREE.MeshStandardMaterial({
+      color: "#f1ead8",
+      roughness: 0.45,
+      metalness: 0.04,
+    }),
+    shoulder: new THREE.MeshStandardMaterial({
+      color: "#737b82",
+      roughness: 0.72,
+      metalness: 0.06,
+    }),
+    grass: new THREE.MeshStandardMaterial({
+      color: "#becac1",
+      roughness: 0.95,
+      metalness: 0.01,
+    }),
+    rubber: new THREE.MeshStandardMaterial({
+      color: "#06070a",
+      roughness: 0.58,
+      metalness: 0.02,
+    }),
+    chrome: new THREE.MeshStandardMaterial({
+      color: "#eff4f5",
+      roughness: 0.13,
+      metalness: 0.98,
+      envMapIntensity,
+    }),
+    rim: new THREE.MeshStandardMaterial({
+      color: "#dce3e7",
+      roughness: 0.16,
+      metalness: 0.96,
+      envMapIntensity,
+    }),
+    spoke: new THREE.MeshStandardMaterial({
+      color: "#f3f6f7",
+      roughness: 0.2,
+      metalness: 0.9,
+      envMapIntensity,
+    }),
+    frame: new THREE.MeshStandardMaterial({
+      color: "#14171c",
+      roughness: 0.38,
+      metalness: 0.56,
+      envMapIntensity,
+    }),
+    leather: new THREE.MeshStandardMaterial({
+      color: "#121418",
+      roughness: 0.52,
+      metalness: 0.08,
+    }),
+    jacket: new THREE.MeshStandardMaterial({
+      color: "#29424a",
+      roughness: 0.58,
+      metalness: 0.05,
+    }),
+    jacketPanel: new THREE.MeshStandardMaterial({
+      color: "#3f6f73",
+      roughness: 0.52,
+      metalness: 0.08,
+    }),
+    denim: new THREE.MeshStandardMaterial({
+      color: "#253847",
+      roughness: 0.66,
+      metalness: 0.03,
+    }),
+    glove: new THREE.MeshStandardMaterial({
+      color: "#0b0d11",
+      roughness: 0.45,
+      metalness: 0.08,
+    }),
+    boot: new THREE.MeshStandardMaterial({
+      color: "#090b0e",
+      roughness: 0.52,
+      metalness: 0.12,
+    }),
+    helmet: new THREE.MeshStandardMaterial({
+      color: "#121720",
+      roughness: 0.24,
+      metalness: 0.42,
+      envMapIntensity,
+    }),
     visor: new THREE.MeshStandardMaterial({
       color: "#0a1620",
       roughness: 0.07,
@@ -171,21 +279,34 @@ function createMaterials() {
       transparent: true,
       opacity: 0.74,
     }),
-    skin: new THREE.MeshStandardMaterial({ color: "#c58a66", roughness: 0.62, metalness: 0.02 }),
-    glass: new THREE.MeshStandardMaterial({
-      color: "#e4f8ff",
-      roughness: 0.08,
-      metalness: 0.08,
-      transparent: true,
-      opacity: 0.82,
+    skin: new THREE.MeshStandardMaterial({
+      color: "#c58a66",
+      roughness: 0.62,
+      metalness: 0.02,
     }),
-    headlightGlow: new THREE.MeshBasicMaterial({ color: "#fff3c2" }),
-    signal: new THREE.MeshBasicMaterial({ color: "#f3a035" }),
-    brake: new THREE.MeshBasicMaterial({ color: "#dc2e38" }),
-    cone: new THREE.MeshStandardMaterial({ color: "#d86f31", roughness: 0.5, metalness: 0.03 }),
-    coneBand: new THREE.MeshStandardMaterial({ color: "#fff7e8", roughness: 0.42, metalness: 0.03 }),
-    barrier: new THREE.MeshStandardMaterial({ color: "#d8dde0", roughness: 0.42, metalness: 0.24 }),
-    warning: new THREE.MeshStandardMaterial({ color: "#c9a45f", roughness: 0.42, metalness: 0.08 }),
+    cone: new THREE.MeshStandardMaterial({
+      color: "#d86f31",
+      roughness: 0.5,
+      metalness: 0.03,
+    }),
+    coneBand: new THREE.MeshStandardMaterial({
+      color: "#fff7e8",
+      roughness: 0.42,
+      metalness: 0.03,
+    }),
+    barrier: new THREE.MeshStandardMaterial({
+      color: "#d8dde0",
+      roughness: 0.42,
+      metalness: 0.24,
+    }),
+    warning: new THREE.MeshStandardMaterial({
+      color: "#c9a45f",
+      roughness: 0.42,
+      metalness: 0.08,
+    }),
+    bonus: new THREE.MeshBasicMaterial({ color: "#63e0a3" }),
+    heart: new THREE.MeshBasicMaterial({ color: "#ff6686" }),
+    shield: new THREE.MeshBasicMaterial({ color: "#64c7ff" }),
   };
 }
 
@@ -201,7 +322,14 @@ function createLights() {
   rim.position.set(4.2, 2.6, -3.4);
   scene.add(rim);
 
-  const headlight = new THREE.SpotLight("#fff2bd", 8, 26, Math.PI * 0.12, 0.48, 1.1);
+  const headlight = new THREE.SpotLight(
+    "#fff2bd",
+    8,
+    26,
+    Math.PI * 0.12,
+    0.48,
+    1.1,
+  );
   headlight.position.set(0, 1.31, 1.72);
   headlight.target.position.set(0, 0.35, 9);
   bikeRig.add(headlight, headlight.target);
@@ -209,17 +337,26 @@ function createLights() {
 }
 
 function createRoad() {
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(100, 130), materials.grass);
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(100, 130),
+    materials.grass,
+  );
   ground.rotation.x = -Math.PI * 0.5;
   ground.position.y = -0.045;
   worldGroup.add(ground);
 
-  const road = new THREE.Mesh(new THREE.PlaneGeometry(8, 150), materials.asphalt);
+  const road = new THREE.Mesh(
+    new THREE.PlaneGeometry(8, 150),
+    materials.asphalt,
+  );
   road.rotation.x = -Math.PI * 0.5;
   roadGroup.add(road);
 
   [-3.15, 3.15].forEach((x) => {
-    const shoulder = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 150), materials.shoulder);
+    const shoulder = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.22, 150),
+      materials.shoulder,
+    );
     shoulder.rotation.x = -Math.PI * 0.5;
     shoulder.position.set(x, 0.006, 0);
     roadGroup.add(shoulder);
@@ -227,7 +364,10 @@ function createRoad() {
 
   [-0.86, 0.86].forEach((x) => {
     for (let index = 0; index < ROAD_MARKER_ROWS; index += 1) {
-      const marker = new THREE.Mesh(new RoundedBoxGeometry(0.09, 0.012, 2.0, 2, 0.004), materials.lane);
+      const marker = new THREE.Mesh(
+        new RoundedBoxGeometry(0.09, 0.012, 2.0, 2, 0.004),
+        materials.lane,
+      );
       marker.position.set(x, 0.018, index * -5.6 + 34);
       roadMarkers.push(marker);
       roadGroup.add(marker);
@@ -236,17 +376,31 @@ function createRoad() {
 }
 
 function createEnvironment() {
-  const railMaterial = new THREE.MeshStandardMaterial({ color: "#b7c1c6", roughness: 0.45, metalness: 0.42 });
+  const railMaterial = new THREE.MeshStandardMaterial({
+    color: "#b7c1c6",
+    roughness: 0.45,
+    metalness: 0.42,
+  });
   [-4.25, 4.25].forEach((x) => {
-    const rail = new THREE.Mesh(new RoundedBoxGeometry(0.16, 0.2, 120, 3, 0.04), railMaterial);
+    const rail = new THREE.Mesh(
+      new RoundedBoxGeometry(0.16, 0.2, 120, 3, 0.04),
+      railMaterial,
+    );
     rail.position.set(x, 0.52, -6);
     worldGroup.add(rail);
   });
 
-  const postMaterial = new THREE.MeshStandardMaterial({ color: "#596168", roughness: 0.55, metalness: 0.35 });
+  const postMaterial = new THREE.MeshStandardMaterial({
+    color: "#596168",
+    roughness: 0.55,
+    metalness: 0.35,
+  });
   for (let index = 0; index < ROADSIDE_POST_ROWS; index += 1) {
     [-4.25, 4.25].forEach((x) => {
-      const post = new THREE.Mesh(new RoundedBoxGeometry(0.12, 0.78, 0.12, 2, 0.02), postMaterial);
+      const post = new THREE.Mesh(
+        new RoundedBoxGeometry(0.12, 0.78, 0.12, 2, 0.02),
+        postMaterial,
+      );
       post.position.set(x, 0.34, index * -5.2 + 40);
       roadsideObjects.push(post);
       worldGroup.add(post);
@@ -254,230 +408,177 @@ function createEnvironment() {
   }
 
   const buildingMaterials = [
-    new THREE.MeshStandardMaterial({ color: "#9aa6ae", roughness: 0.82, metalness: 0.03 }),
-    new THREE.MeshStandardMaterial({ color: "#bbb4a8", roughness: 0.82, metalness: 0.02 }),
-    new THREE.MeshStandardMaterial({ color: "#7d8992", roughness: 0.84, metalness: 0.03 }),
+    new THREE.MeshStandardMaterial({
+      color: "#9aa6ae",
+      roughness: 0.82,
+      metalness: 0.03,
+    }),
+    new THREE.MeshStandardMaterial({
+      color: "#bbb4a8",
+      roughness: 0.82,
+      metalness: 0.02,
+    }),
+    new THREE.MeshStandardMaterial({
+      color: "#7d8992",
+      roughness: 0.84,
+      metalness: 0.03,
+    }),
   ];
   for (let index = 0; index < BUILDING_COUNT; index += 1) {
     const height = 1.4 + (index % 5) * 0.42;
     const width = 0.9 + (index % 3) * 0.34;
-    const building = new THREE.Mesh(new RoundedBoxGeometry(width, height, 1.15, 2, 0.025), buildingMaterials[index % buildingMaterials.length]);
+    const building = new THREE.Mesh(
+      new RoundedBoxGeometry(width, height, 1.15, 2, 0.025),
+      buildingMaterials[index % buildingMaterials.length],
+    );
     const side = index % 2 === 0 ? -1 : 1;
-    building.position.set(side * (6.2 + (index % 4) * 0.58), height / 2 - 0.02, index * -5.4 + 30);
+    building.position.set(
+      side * (6.2 + (index % 4) * 0.58),
+      height / 2 - 0.02,
+      index * -5.4 + 30,
+    );
     roadsideObjects.push(building);
     worldGroup.add(building);
   }
 }
 
-function createClassicSingle() {
+function createLightBicycle() {
   const rearWheel = createWheel("rear");
-  rearWheel.position.set(0, 0.58, 1.22);
+  rearWheel.position.set(0, 0.58, 1.14);
   bikeGroup.add(rearWheel);
   wheelMeshes.push(rearWheel);
 
   const frontWheel = createWheel("front");
-  frontWheel.position.set(0, 0.58, -1.45);
+  frontWheel.position.set(0, 0.58, -1.18);
   bikeGroup.add(frontWheel);
   wheelMeshes.push(frontWheel);
 
   const frameTubes = [
-    [v3(0, 0.82, 1.08), v3(0, 1.18, -0.48), 0.05],
-    [v3(0, 0.82, 1.08), v3(0, 0.72, -0.34), 0.044],
-    [v3(0, 0.72, -0.34), v3(0, 1.34, -1.13), 0.05],
-    [v3(0, 1.18, -0.48), v3(0, 1.34, -1.13), 0.046],
-    [v3(0, 1.18, -0.48), v3(0, 1.3, 0.86), 0.048],
-    [v3(0, 0.82, 1.08), v3(0, 1.3, 0.86), 0.044],
+    [v3(0, 0.68, 1.1), v3(0, 1.18, 0.2), 0.035],
+    [v3(0, 0.68, -0.98), v3(0, 1.18, 0.2), 0.035],
+    [v3(0, 0.68, 1.1), v3(0, 0.72, -0.72), 0.032],
+    [v3(0, 0.68, -0.98), v3(0, 0.72, -0.72), 0.032],
+    [v3(0, 0.72, -0.72), v3(0, 1.18, 0.2), 0.032],
+    [v3(0, 1.18, 0.2), v3(0, 1.42, 0.86), 0.03],
   ];
-  frameTubes.forEach(([start, end, radius]) => bikeGroup.add(capsuleBetween(start, end, radius, materials.frame)));
-
-  bikeGroup.add(
-    capsuleBetween(v3(-0.18, 0.58, 1.22), v3(-0.25, 0.84, 0.12), 0.034, materials.frame),
-    capsuleBetween(v3(0.18, 0.58, 1.22), v3(0.25, 0.84, 0.12), 0.034, materials.frame),
-    capsuleBetween(v3(-0.17, 0.58, -1.45), v3(-0.29, 1.43, -1.09), 0.036, materials.chrome),
-    capsuleBetween(v3(0.17, 0.58, -1.45), v3(0.29, 1.43, -1.09), 0.036, materials.chrome),
+  frameTubes.forEach(([start, end, radius]) =>
+    bikeGroup.add(capsuleBetween(start, end, radius, materials.frame)),
   );
 
-  createEngine();
-  createTankAndSeat();
-  createFrontCluster();
-  createRearDetails();
-  createExhaustAndControls();
+  bikeGroup.add(
+    capsuleBetween(
+      v3(-0.13, 0.58, 1.14),
+      v3(-0.18, 0.85, 0.18),
+      0.026,
+      materials.frame,
+    ),
+    capsuleBetween(
+      v3(0.13, 0.58, 1.14),
+      v3(0.18, 0.85, 0.18),
+      0.026,
+      materials.frame,
+    ),
+    capsuleBetween(
+      v3(-0.12, 0.58, -1.18),
+      v3(-0.24, 1.3, -0.88),
+      0.028,
+      materials.chrome,
+    ),
+    capsuleBetween(
+      v3(0.12, 0.58, -1.18),
+      v3(0.24, 1.3, -0.88),
+      0.028,
+      materials.chrome,
+    ),
+    capsuleBetween(
+      v3(-0.52, 1.45, -0.86),
+      v3(0.52, 1.45, -0.86),
+      0.032,
+      materials.chrome,
+    ),
+    capsuleBetween(
+      v3(-0.52, 1.45, -0.86),
+      v3(-0.72, 1.42, -0.78),
+      0.038,
+      materials.rubber,
+    ),
+    capsuleBetween(
+      v3(0.52, 1.45, -0.86),
+      v3(0.72, 1.42, -0.78),
+      0.038,
+      materials.rubber,
+    ),
+  );
+
+  const crank = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.15, 0.15, 0.06, 28),
+    materials.chrome,
+  );
+  crank.rotation.z = Math.PI * 0.5;
+  crank.position.set(0, 0.78, -0.18);
+
+  const pedalLeft = new THREE.Mesh(
+    new RoundedBoxGeometry(0.36, 0.045, 0.11, 2, 0.01),
+    materials.rubber,
+  );
+  pedalLeft.position.set(-0.34, 0.78, -0.18);
+  pedalLeft.rotation.z = 0.2;
+  const pedalRight = pedalLeft.clone();
+  pedalRight.position.x = 0.34;
+  pedalRight.rotation.z = -0.2;
+
+  const chain = capsuleBetween(
+    v3(-0.08, 0.71, -0.18),
+    v3(-0.12, 0.62, 1.12),
+    0.014,
+    materials.chrome,
+  );
+  const saddlePost = capsuleBetween(
+    v3(0, 1.18, 0.2),
+    v3(0, 1.48, 0.52),
+    0.028,
+    materials.chrome,
+  );
+  const saddle = new THREE.Mesh(
+    new RoundedBoxGeometry(0.48, 0.1, 0.42, 4, 0.04),
+    materials.leather,
+  );
+  saddle.position.set(0, 1.55, 0.62);
+  saddle.rotation.x = 0.06;
+
+  bikeGroup.add(crank, pedalLeft, pedalRight, chain, saddlePost, saddle);
 
   markShadow(bikeGroup);
 }
 
-function createEngine() {
-  const engineCase = new THREE.Mesh(new RoundedBoxGeometry(0.72, 0.42, 0.56, 6, 0.055), materials.engine);
-  engineCase.position.set(0, 0.78, -0.08);
-  bikeGroup.add(engineCase);
-
-  [-0.38, 0.38].forEach((x) => {
-    const crank = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.055, 32), materials.chrome);
-    crank.rotation.z = Math.PI * 0.5;
-    crank.position.set(x, 0.78, -0.02);
-    bikeGroup.add(crank);
-  });
-
-  const cylinder = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.23, 0.62, 32), materials.engine);
-  cylinder.position.set(0, 1.06, -0.14);
-  bikeGroup.add(cylinder);
-
-  for (let index = 0; index < 10; index += 1) {
-    const fin = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.3, 0.014, 32), index % 2 ? materials.engine : materials.engineDark);
-    fin.position.set(0, 0.78 + index * 0.057, -0.14);
-    bikeGroup.add(fin);
-  }
-
-  const sparkPlug = capsuleBetween(v3(0.15, 1.26, -0.2), v3(0.32, 1.39, -0.28), 0.017, materials.chrome);
-  const cable = capsuleBetween(v3(0.32, 1.39, -0.28), v3(0.46, 1.26, 0.05), 0.011, materials.frame);
-  bikeGroup.add(sparkPlug, cable);
-}
-
-function createTankAndSeat() {
-  const tank = new THREE.Mesh(new THREE.SphereGeometry(0.58, 40, 22), materials.tank);
-  tank.position.set(0, 1.46, -0.34);
-  tank.scale.set(0.84, 0.42, 1.25);
-  tank.rotation.x = -0.04;
-  bikeGroup.add(tank);
-
-  const stripe = new THREE.Mesh(new RoundedBoxGeometry(0.05, 0.014, 1.08, 3, 0.006), materials.pinstripe);
-  stripe.position.set(0, 1.735, -0.34);
-  stripe.rotation.x = -0.04;
-  bikeGroup.add(stripe, createTankBadge(-1), createTankBadge(1));
-
-  const seatBase = new THREE.Mesh(new RoundedBoxGeometry(0.78, 0.1, 1.62, 6, 0.04), materials.frame);
-  seatBase.position.set(0, 1.29, 0.68);
-  const seat = new THREE.Mesh(new RoundedBoxGeometry(0.76, 0.17, 1.58, 8, 0.075), materials.leather);
-  seat.position.set(0, 1.4, 0.64);
-  bikeGroup.add(seatBase, seat);
-
-  const sideLeft = new THREE.Mesh(new RoundedBoxGeometry(0.07, 0.32, 0.45, 5, 0.035), materials.tankDark);
-  sideLeft.position.set(-0.42, 1.02, 0.38);
-  const sideRight = sideLeft.clone();
-  sideRight.position.x = 0.42;
-  bikeGroup.add(sideLeft, sideRight);
-}
-
-function createFrontCluster() {
-  bikeGroup.add(createFender(-1.45, 0.58, 0.64, 0.035, materials.chrome));
-
-  const headlightBucket = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.18, 32), materials.chrome);
-  headlightBucket.position.set(0, 1.31, -1.7);
-  headlightBucket.rotation.x = Math.PI * 0.5;
-  const headlightLens = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.035, 32), materials.glass);
-  headlightLens.position.set(0, 1.31, -1.795);
-  headlightLens.rotation.x = Math.PI * 0.5;
-  const headlightGlow = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.018, 32), materials.headlightGlow);
-  headlightGlow.position.set(0, 1.31, -1.82);
-  headlightGlow.rotation.x = Math.PI * 0.5;
-  bikeGroup.add(headlightBucket, headlightLens, headlightGlow);
-
-  const handlebar = capsuleBetween(v3(-0.68, 1.55, -0.96), v3(0.68, 1.55, -0.96), 0.03, materials.chrome);
-  const leftGrip = capsuleBetween(v3(-0.68, 1.55, -0.96), v3(-0.92, 1.53, -0.9), 0.042, materials.rubber);
-  const rightGrip = capsuleBetween(v3(0.68, 1.55, -0.96), v3(0.92, 1.53, -0.9), 0.042, materials.rubber);
-  const gauges = createGaugeCluster();
-  gauges.position.set(0, 1.56, -1.18);
-  bikeGroup.add(handlebar, leftGrip, rightGrip, createMirror(-1), createMirror(1), gauges);
-
-  [-0.35, 0.35].forEach((x) => {
-    const signal = new THREE.Mesh(new THREE.SphereGeometry(0.055, 16, 10), materials.signal);
-    signal.position.set(x, 1.22, -1.66);
-    bikeGroup.add(signal);
-  });
-}
-
-function createRearDetails() {
-  const rearFender = createFender(1.22, 0.58, 0.66, 0.035, materials.chrome);
-  rearFender.rotation.z = Math.PI * 0.08;
-  const tailMount = new THREE.Mesh(new RoundedBoxGeometry(0.62, 0.12, 0.48, 5, 0.04), materials.frame);
-  tailMount.position.set(0, 1.2, 1.18);
-  const brakeLight = new THREE.Mesh(new RoundedBoxGeometry(0.3, 0.075, 0.06, 4, 0.025), materials.brake);
-  brakeLight.position.set(0, 1.16, 1.62);
-  bikeGroup.add(rearFender, tailMount, brakeLight);
-
-  [-0.32, 0.32].forEach((x) => {
-    const signal = new THREE.Mesh(new THREE.SphereGeometry(0.052, 16, 10), materials.signal);
-    signal.position.set(x, 1.12, 1.56);
-    bikeGroup.add(signal);
-  });
-
-  bikeGroup.add(
-    createSpring(v3(-0.34, 0.75, 1.08), v3(-0.34, 1.25, 0.55), 0.085, 7),
-    createSpring(v3(0.34, 0.75, 1.08), v3(0.34, 1.25, 0.55), 0.085, 7),
-  );
-}
-
-function createExhaustAndControls() {
-  bikeGroup.add(
-    capsuleBetween(v3(0.25, 0.92, -0.24), v3(0.42, 0.6, 0.26), 0.045, materials.chrome),
-    capsuleBetween(v3(0.42, 0.6, 0.26), v3(0.53, 0.76, 1.76), 0.082, materials.chrome),
-    capsuleBetween(v3(-0.31, 0.62, 1.2), v3(-0.31, 0.75, -0.02), 0.022, materials.frame),
-    capsuleBetween(v3(-0.31, 0.5, 1.18), v3(-0.31, 0.58, -0.02), 0.019, materials.frame),
-    capsuleBetween(v3(0.43, 0.84, -0.18), v3(0.55, 0.42, 0.16), 0.024, materials.chrome),
-    capsuleBetween(v3(0.46, 0.42, 0.22), v3(0.72, 0.42, 0.22), 0.028, materials.rubber),
-    capsuleBetween(v3(-0.54, 0.76, 0.26), v3(-0.82, 0.76, 0.26), 0.026, materials.rubber),
-    capsuleBetween(v3(0.54, 0.76, 0.26), v3(0.82, 0.76, 0.26), 0.026, materials.rubber),
-  );
-
-  const exhaustTip = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 0.12, 24), materials.frame);
-  exhaustTip.position.set(0.53, 0.77, 1.84);
-  exhaustTip.rotation.x = Math.PI * 0.5;
-  bikeGroup.add(exhaustTip);
-
-  for (let index = 0; index < 15; index += 1) {
-    const link = new THREE.Mesh(new RoundedBoxGeometry(0.075, 0.022, 0.05, 2, 0.01), materials.chrome);
-    link.position.set(-0.34, 0.58 + index * 0.012, 1.02 - index * 0.083);
-    link.rotation.y = 0.12;
-    bikeGroup.add(link);
-  }
-}
-
-function createWheel(kind) {
+function createWheel() {
   const wheel = new THREE.Group();
-  const tire = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.07, 16, 64), materials.rubber);
+  const tire = new THREE.Mesh(
+    new THREE.TorusGeometry(0.52, 0.042, 10, 44),
+    materials.rubber,
+  );
   tire.rotation.y = Math.PI * 0.5;
   wheel.add(tire);
 
-  for (let index = 0; index < 18; index += 1) {
-    const angle = (index / 18) * Math.PI * 2;
-    const block = new THREE.Mesh(new RoundedBoxGeometry(0.12, 0.01, 0.04, 2, 0.004), materials.tireSide);
-    block.position.set(0, Math.sin(angle) * 0.55, Math.cos(angle) * 0.55);
-    block.rotation.x = -angle;
-    block.rotation.z = index % 2 === 0 ? 0.16 : -0.16;
-    wheel.add(block);
-  }
-
-  [-0.052, 0.052].forEach((x) => {
-    const sidewall = new THREE.Mesh(new THREE.TorusGeometry(0.47, 0.01, 10, 48), materials.tireSide);
-    sidewall.rotation.y = Math.PI * 0.5;
-    sidewall.position.x = x;
-    wheel.add(sidewall);
-  });
-
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.032, 12, 48), materials.rim);
+  const rim = new THREE.Mesh(
+    new THREE.TorusGeometry(0.42, 0.012, 8, 36),
+    materials.rim,
+  );
   rim.rotation.y = Math.PI * 0.5;
-  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.115, 0.22, 28), materials.rim);
+  const hub = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.055, 0.055, 0.14, 16),
+    materials.rim,
+  );
   hub.rotation.z = Math.PI * 0.5;
   wheel.add(rim, hub);
 
-  if (kind === "front") {
-    const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.014, 40), materials.chrome);
-    disc.rotation.z = Math.PI * 0.5;
-    disc.position.x = -0.09;
-    const caliper = new THREE.Mesh(new RoundedBoxGeometry(0.07, 0.16, 0.1, 4, 0.025), materials.tankDark);
-    caliper.position.set(-0.12, 0.23, -0.16);
-    caliper.rotation.x = 0.35;
-    wheel.add(disc, caliper);
-  } else {
-    const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.13, 32), materials.chrome);
-    drum.rotation.z = Math.PI * 0.5;
-    wheel.add(drum);
-  }
-
-  for (let index = 0; index < 22; index += 1) {
-    const spoke = new THREE.Mesh(new RoundedBoxGeometry(0.01, 0.01, 0.58, 2, 0.003), materials.spoke);
+  for (let index = 0; index < 14; index += 1) {
+    const spoke = new THREE.Mesh(
+      new RoundedBoxGeometry(0.007, 0.007, 0.42, 1, 0.002),
+      materials.spoke,
+    );
     spoke.rotation.y = Math.PI * 0.5;
-    spoke.rotation.z = (index * Math.PI) / 11;
+    spoke.rotation.z = (index * Math.PI) / 7;
     spoke.position.x = index % 2 === 0 ? -0.018 : 0.018;
     wheel.add(spoke);
   }
@@ -488,46 +589,62 @@ function createWheel(kind) {
 function createRider() {
   riderGroup.add(createHumanoidTorso(), createHelmet());
 
-  const limbSpecs = [
-    ["leftUpperArm", v3(-0.32, 2.24, -0.02), v3(-0.54, 1.88, -0.54), 0.074, materials.jacket],
-    ["rightUpperArm", v3(0.32, 2.24, -0.02), v3(0.54, 1.88, -0.54), 0.074, materials.jacket],
-    ["leftForearm", v3(-0.54, 1.88, -0.54), v3(-0.9, 1.53, -0.9), 0.058, materials.jacketPanel],
-    ["rightForearm", v3(0.54, 1.88, -0.54), v3(0.9, 1.53, -0.9), 0.058, materials.jacketPanel],
-    ["leftThigh", v3(-0.21, 1.42, 0.45), v3(-0.47, 1.02, -0.03), 0.105, materials.denim],
-    ["rightThigh", v3(0.21, 1.42, 0.45), v3(0.47, 1.02, -0.03), 0.105, materials.denim],
-    ["leftShin", v3(-0.47, 1.02, -0.03), v3(-0.56, 0.62, 0.3), 0.082, materials.denim],
-    ["rightShin", v3(0.47, 1.02, -0.03), v3(0.56, 0.62, 0.3), 0.082, materials.denim],
+  const limbs = [
+    [v3(-0.24, 2.1, -0.18), v3(-0.43, 1.8, -0.5), 0.058, materials.jacket],
+    [v3(0.24, 2.1, -0.18), v3(0.43, 1.8, -0.5), 0.058, materials.jacket],
+    [
+      v3(-0.43, 1.8, -0.5),
+      v3(-0.72, 1.44, -0.78),
+      0.046,
+      materials.jacketPanel,
+    ],
+    [v3(0.43, 1.8, -0.5), v3(0.72, 1.44, -0.78), 0.046, materials.jacketPanel],
+    [v3(-0.15, 1.5, 0.52), v3(-0.34, 1.08, 0.02), 0.086, materials.denim],
+    [v3(0.15, 1.5, 0.52), v3(0.34, 1.08, 0.02), 0.086, materials.denim],
+    [v3(-0.34, 1.08, 0.02), v3(-0.34, 0.79, -0.18), 0.066, materials.denim],
+    [v3(0.34, 1.08, 0.02), v3(0.34, 0.79, -0.18), 0.066, materials.denim],
   ];
-  limbSpecs.forEach(([, start, end, radius, material]) => riderGroup.add(capsuleBetween(start, end, radius, material)));
+  limbs.forEach(([start, end, radius, material]) =>
+    riderGroup.add(capsuleBetween(start, end, radius, material)),
+  );
 
   [
-    [-0.9, 1.53, -0.9],
-    [0.9, 1.53, -0.9],
+    [-0.72, 1.44, -0.78],
+    [0.72, 1.44, -0.78],
   ].forEach(([x, y, z]) => {
-    const glove = new THREE.Mesh(new THREE.SphereGeometry(0.092, 18, 10), materials.glove);
+    const glove = new THREE.Mesh(
+      new THREE.SphereGeometry(0.075, 18, 10),
+      materials.glove,
+    );
     glove.position.set(x, y, z);
-    glove.scale.set(1.1, 0.92, 0.96);
+    glove.scale.set(1.16, 0.88, 0.9);
     riderGroup.add(glove);
   });
 
   [
-    [-0.56, 0.51, 0.4, -0.16],
-    [0.56, 0.51, 0.4, 0.16],
+    [-0.34, 0.75, -0.2, -0.12],
+    [0.34, 0.75, -0.2, 0.12],
   ].forEach(([x, y, z, yaw]) => {
-    const boot = new THREE.Mesh(new RoundedBoxGeometry(0.22, 0.16, 0.42, 6, 0.045), materials.boot);
-    boot.position.set(x, y, z);
-    boot.rotation.y = yaw;
-    boot.rotation.x = -0.1;
-    riderGroup.add(boot);
+    const shoe = new THREE.Mesh(
+      new RoundedBoxGeometry(0.2, 0.12, 0.34, 5, 0.035),
+      materials.boot,
+    );
+    shoe.position.set(x, y, z);
+    shoe.rotation.y = yaw;
+    shoe.rotation.x = -0.08;
+    riderGroup.add(shoe);
   });
 
   [
-    [-0.47, 1.02, -0.11],
-    [0.47, 1.02, -0.11],
+    [-0.34, 1.08, 0.02],
+    [0.34, 1.08, 0.02],
   ].forEach(([x, y, z]) => {
-    const knee = new THREE.Mesh(new RoundedBoxGeometry(0.19, 0.13, 0.08, 5, 0.028), materials.jacketPanel);
+    const knee = new THREE.Mesh(
+      new THREE.SphereGeometry(0.095, 16, 10),
+      materials.jacketPanel,
+    );
     knee.position.set(x, y, z);
-    knee.rotation.x = -0.38;
+    knee.scale.set(1, 0.72, 0.9);
     riderGroup.add(knee);
   });
 
@@ -537,65 +654,84 @@ function createRider() {
 function createHumanoidTorso() {
   const group = new THREE.Group();
 
-  const hips = new THREE.Mesh(new THREE.SphereGeometry(0.34, 28, 16), materials.denim);
-  hips.position.set(0, 1.52, 0.46);
-  hips.scale.set(1.08, 0.58, 0.72);
+  const hips = new THREE.Mesh(
+    new THREE.SphereGeometry(0.27, 24, 14),
+    materials.denim,
+  );
+  hips.position.set(0, 1.5, 0.5);
+  hips.scale.set(1.12, 0.56, 0.78);
 
-  const abdomen = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 0.34, 10, 20), materials.jacket);
-  abdomen.position.set(0, 1.84, 0.24);
-  abdomen.rotation.x = 0.24;
-  abdomen.scale.set(1.02, 1, 0.82);
+  const torso = capsuleBetween(
+    v3(0, 1.66, 0.34),
+    v3(0, 2.12, -0.2),
+    0.22,
+    materials.jacket,
+  );
+  torso.scale.x = 0.9;
+  torso.scale.z = 0.78;
 
-  const chest = new THREE.Mesh(new THREE.CapsuleGeometry(0.34, 0.58, 10, 22), materials.jacket);
-  chest.position.set(0, 2.16, 0.08);
-  chest.rotation.x = 0.22;
-  chest.scale.set(1.04, 1.06, 0.76);
+  const chestPanel = new THREE.Mesh(
+    new RoundedBoxGeometry(0.34, 0.42, 0.055, 5, 0.025),
+    materials.jacketPanel,
+  );
+  chestPanel.position.set(0, 1.98, -0.36);
+  chestPanel.rotation.x = -0.72;
 
-  const spinePad = new THREE.Mesh(new RoundedBoxGeometry(0.28, 0.74, 0.12, 6, 0.05), materials.jacketPanel);
-  spinePad.position.set(0, 2.1, 0.36);
-  spinePad.rotation.x = 0.22;
+  const neck = capsuleBetween(
+    v3(0, 2.22, -0.28),
+    v3(0, 2.35, -0.38),
+    0.075,
+    materials.skin,
+  );
 
-  const zipper = new THREE.Mesh(new RoundedBoxGeometry(0.035, 0.86, 0.018, 3, 0.008), materials.chrome);
-  zipper.position.set(0, 2.08, -0.17);
-  zipper.rotation.x = 0.22;
-
-  [-0.34, 0.34].forEach((x) => {
-    const shoulder = new THREE.Mesh(new THREE.SphereGeometry(0.17, 18, 10), materials.jacketPanel);
-    shoulder.position.set(x, 2.32, 0.02);
-    shoulder.scale.set(1.2, 0.62, 0.86);
+  [-0.24, 0.24].forEach((x) => {
+    const shoulder = new THREE.Mesh(
+      new THREE.SphereGeometry(0.12, 16, 10),
+      materials.jacketPanel,
+    );
+    shoulder.position.set(x, 2.1, -0.18);
+    shoulder.scale.set(1.08, 0.7, 0.88);
     group.add(shoulder);
   });
 
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.15, 0.2, 20), materials.skin);
-  neck.position.set(0, 2.53, -0.05);
-  neck.rotation.x = 0.18;
-
-  group.add(hips, abdomen, chest, spinePad, zipper, neck);
+  group.add(hips, torso, chestPanel, neck);
   return group;
 }
 
 function createHelmet() {
   const helmet = new THREE.Group();
-  helmet.position.set(0, 2.76, -0.2);
-  helmet.rotation.x = 0.18;
+  helmet.position.set(0, 2.46, -0.48);
+  helmet.rotation.x = -0.18;
 
-  const shell = new THREE.Mesh(new THREE.SphereGeometry(0.35, 32, 18), materials.helmet);
-  shell.scale.set(0.98, 0.98, 1.08);
-  const chin = new THREE.Mesh(new RoundedBoxGeometry(0.42, 0.18, 0.22, 7, 0.06), materials.helmet);
-  chin.position.set(0, -0.18, -0.28);
-  const visor = new THREE.Mesh(new RoundedBoxGeometry(0.45, 0.17, 0.038, 8, 0.036), materials.visor);
-  visor.position.set(0, 0.04, -0.35);
-  visor.rotation.x = 0.08;
-  const brow = new THREE.Mesh(new RoundedBoxGeometry(0.5, 0.045, 0.06, 5, 0.02), materials.helmet);
-  brow.position.set(0, 0.16, -0.34);
+  const face = new THREE.Mesh(
+    new THREE.SphereGeometry(0.19, 22, 14),
+    materials.skin,
+  );
+  face.position.set(0, -0.03, -0.04);
+  face.scale.set(0.92, 1.02, 0.88);
 
-  [-0.24, 0.24].forEach((x) => {
-    const vent = new THREE.Mesh(new RoundedBoxGeometry(0.085, 0.045, 0.02, 3, 0.012), materials.chrome);
-    vent.position.set(x, -0.05, -0.385);
-    helmet.add(vent);
-  });
+  const shell = new THREE.Mesh(
+    new THREE.SphereGeometry(0.24, 28, 16),
+    materials.helmet,
+  );
+  shell.position.y = 0.03;
+  shell.scale.set(1, 0.82, 1.06);
 
-  helmet.add(shell, chin, visor, brow);
+  const strap = new THREE.Mesh(
+    new RoundedBoxGeometry(0.29, 0.035, 0.035, 3, 0.012),
+    materials.glove,
+  );
+  strap.position.set(0, -0.14, -0.02);
+  strap.rotation.x = 0.26;
+
+  const visor = new THREE.Mesh(
+    new RoundedBoxGeometry(0.26, 0.055, 0.035, 5, 0.018),
+    materials.visor,
+  );
+  visor.position.set(0, 0.01, -0.23);
+  visor.rotation.x = -0.08;
+
+  helmet.add(face, shell, strap, visor);
   return helmet;
 }
 
@@ -605,29 +741,47 @@ function createObstacle(type) {
     type,
     hit: false,
     passed: false,
-    width: type === "barrier" ? 0.98 : type === "cone" ? 0.58 : 0.66,
-    jumpClear: type === "cone" ? 0.36 : 999,
+    width: type === "barrier" ? 0.58 : type === "cone" ? 0.32 : 0.42,
+    jumpClear: type === "cone" ? 0.22 : 999,
   };
 
   if (type === "cone") {
-    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.76, 24), materials.cone);
+    const cone = new THREE.Mesh(
+      new THREE.ConeGeometry(0.28, 0.76, 24),
+      materials.cone,
+    );
     cone.position.y = 0.38;
-    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.23, 0.055, 24), materials.coneBand);
+    const band = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.19, 0.23, 0.055, 24),
+      materials.coneBand,
+    );
     band.position.y = 0.42;
     group.add(cone, band);
   } else if (type === "barrier") {
-    const beam = new THREE.Mesh(new RoundedBoxGeometry(1.1, 0.36, 0.18, 5, 0.035), materials.barrier);
+    const beam = new THREE.Mesh(
+      new RoundedBoxGeometry(1.1, 0.36, 0.18, 5, 0.035),
+      materials.barrier,
+    );
     beam.position.y = 0.52;
-    const stripeA = new THREE.Mesh(new RoundedBoxGeometry(0.14, 0.39, 0.19, 2, 0.012), materials.warning);
+    const stripeA = new THREE.Mesh(
+      new RoundedBoxGeometry(0.14, 0.39, 0.19, 2, 0.012),
+      materials.warning,
+    );
     stripeA.position.set(-0.28, 0.52, -0.01);
     stripeA.rotation.z = -0.55;
     const stripeB = stripeA.clone();
     stripeB.position.x = 0.28;
     group.add(beam, stripeA, stripeB);
   } else {
-    const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.74, 28), materials.warning);
+    const drum = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.28, 0.28, 0.74, 28),
+      materials.warning,
+    );
     drum.position.y = 0.37;
-    const capA = new THREE.Mesh(new THREE.CylinderGeometry(0.29, 0.29, 0.04, 28), materials.barrier);
+    const capA = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.29, 0.29, 0.04, 28),
+      materials.barrier,
+    );
     capA.position.y = 0.76;
     const capB = capA.clone();
     capB.position.y = 0.02;
@@ -635,6 +789,58 @@ function createObstacle(type) {
   }
 
   markShadow(group);
+  return group;
+}
+
+function createItem(type) {
+  const group = new THREE.Group();
+  group.userData = {
+    type,
+    collected: false,
+    radius: 0.86,
+  };
+
+  if (type === "heart") {
+    const left = new THREE.Mesh(
+      new THREE.SphereGeometry(0.13, 14, 10),
+      materials.heart,
+    );
+    left.position.set(-0.08, 0.1, 0);
+    const right = left.clone();
+    right.position.x = 0.08;
+    const point = new THREE.Mesh(
+      new THREE.ConeGeometry(0.19, 0.26, 16),
+      materials.heart,
+    );
+    point.position.y = -0.07;
+    point.rotation.z = Math.PI;
+    group.add(left, right, point);
+  } else if (type === "shield") {
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(0.22, 0.035, 8, 24),
+      materials.shield,
+    );
+    ring.rotation.x = Math.PI * 0.5;
+    const core = new THREE.Mesh(
+      new THREE.SphereGeometry(0.1, 12, 8),
+      materials.shield,
+    );
+    group.add(ring, core);
+  } else {
+    const coin = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.2, 0.2, 0.06, 22),
+      materials.bonus,
+    );
+    coin.rotation.x = Math.PI * 0.5;
+    const glow = new THREE.Mesh(
+      new THREE.TorusGeometry(0.24, 0.018, 6, 22),
+      materials.bonus,
+    );
+    glow.rotation.x = Math.PI * 0.5;
+    group.add(coin, glow);
+  }
+
+  group.position.y = 0.82;
   return group;
 }
 
@@ -649,7 +855,10 @@ function spawnObstacle() {
     return;
   }
 
-  if (difficulty.level >= 3 && Math.random() < 0.18 + difficulty.factor * 0.42) {
+  if (
+    difficulty.level >= 3 &&
+    Math.random() < 0.18 + difficulty.factor * 0.42
+  ) {
     spawnBlockedRow(difficulty, FRONT_SPAWN_Z);
     return;
   }
@@ -670,7 +879,10 @@ function spawnSingleObstacle(difficulty, z) {
 function spawnBlockedRow(difficulty, z) {
   const gapLane = Math.floor(Math.random() * lanes.length);
   lanes.forEach((_, lane) => {
-    if (lane === gapLane || obstacles.length >= getMaxObstacleCount(difficulty)) {
+    if (
+      lane === gapLane ||
+      obstacles.length >= getMaxObstacleCount(difficulty)
+    ) {
       return;
     }
     addObstacle(chooseObstacleType(Math.random(), difficulty), lane, z);
@@ -681,12 +893,19 @@ function spawnStaggeredRows(difficulty) {
   const firstGap = Math.floor(Math.random() * lanes.length);
   const secondGap = (firstGap + (Math.random() < 0.5 ? 1 : 2)) % lanes.length;
   spawnBlockedRowWithGap(difficulty, firstGap, FRONT_SPAWN_Z);
-  spawnBlockedRowWithGap(difficulty, secondGap, FRONT_SPAWN_Z + THREE.MathUtils.lerp(9.5, 6.2, difficulty.factor));
+  spawnBlockedRowWithGap(
+    difficulty,
+    secondGap,
+    FRONT_SPAWN_Z + THREE.MathUtils.lerp(9.5, 6.2, difficulty.factor),
+  );
 }
 
 function spawnBlockedRowWithGap(difficulty, gapLane, z) {
   lanes.forEach((_, lane) => {
-    if (lane === gapLane || obstacles.length >= getMaxObstacleCount(difficulty)) {
+    if (
+      lane === gapLane ||
+      obstacles.length >= getMaxObstacleCount(difficulty)
+    ) {
       return;
     }
     addObstacle(chooseObstacleType(Math.random(), difficulty), lane, z);
@@ -701,6 +920,39 @@ function addObstacle(type, lane, z) {
   obstacleGroup.add(obstacle);
 }
 
+function spawnItem(difficulty) {
+  if (items.length >= 3) {
+    return;
+  }
+  const roll = Math.random();
+  const type = roll < 0.68 ? "coin" : roll < 0.86 ? "shield" : "heart";
+  const lane = Math.floor(Math.random() * lanes.length);
+  const item = createItem(type);
+  item.position.x = lanes[lane];
+  item.position.z =
+    FRONT_SPAWN_Z + THREE.MathUtils.randFloat(4, 13 - difficulty.factor * 4);
+  item.userData.lane = lane;
+  items.push(item);
+  obstacleGroup.add(item);
+}
+
+function applyItem(item) {
+  const type = item.userData.type;
+  if (type === "heart") {
+    game.lives = Math.min(4, game.lives + 1);
+    bumpCombo(1);
+    setStatusMessage("+LIFE");
+  } else if (type === "shield") {
+    game.shieldTimer = 4.8;
+    bumpCombo(1);
+    setStatusMessage("SHIELD");
+  } else {
+    bumpCombo(1);
+    awardScore(220 + getDifficulty().level * 30, "COIN");
+  }
+  updateHighScore();
+}
+
 function chooseObstacleType(roll, difficulty) {
   if (difficulty.level < 3) {
     return roll < 0.62 ? "cone" : roll < 0.9 ? "drum" : "barrier";
@@ -712,7 +964,11 @@ function chooseObstacleType(roll, difficulty) {
 }
 
 function getDifficulty() {
-  const level = THREE.MathUtils.clamp(Math.floor(game.score / DIFFICULTY_SCORE_STEP), 0, MAX_DIFFICULTY_LEVEL);
+  const level = THREE.MathUtils.clamp(
+    Math.floor(game.score / DIFFICULTY_SCORE_STEP),
+    0,
+    MAX_DIFFICULTY_LEVEL,
+  );
   return {
     level,
     factor: level / MAX_DIFFICULTY_LEVEL,
@@ -729,16 +985,57 @@ function getSpawnDelay(difficulty) {
   return THREE.MathUtils.randFloat(center - jitter, center + jitter);
 }
 
+function getItemDelay(difficulty) {
+  const center = THREE.MathUtils.lerp(2.8, 1.75, difficulty.factor);
+  return THREE.MathUtils.randFloat(center * 0.72, center * 1.18);
+}
+
 function getMaxObstacleCount(difficulty) {
   return Math.round(THREE.MathUtils.lerp(4, MAX_OBSTACLES, difficulty.factor));
+}
+
+function bumpCombo(amount = 1) {
+  game.combo = THREE.MathUtils.clamp(game.combo + amount, 1, MAX_COMBO);
+  game.comboTimer = COMBO_WINDOW;
+  game.bestCombo = Math.max(game.bestCombo, game.combo);
+}
+
+function resetCombo() {
+  game.combo = 1;
+  game.comboTimer = 0;
+}
+
+function awardScore(base, label = "") {
+  const amount = Math.round(base * game.combo);
+  game.score += amount;
+  if (label) {
+    setStatusMessage(`${label} +${amount}`);
+  }
+  updateHighScore();
+}
+
+function updateHighScore() {
+  if (game.score <= game.highScore) {
+    return;
+  }
+  game.highScore = game.score;
+  saveSessionHighScore(game.highScore);
 }
 
 function updateGame(delta) {
   const difficulty = getDifficulty();
   const targetX = lanes[game.targetLane];
   const previousX = game.bikeX;
-  game.bikeX = THREE.MathUtils.lerp(game.bikeX, targetX, THREE.MathUtils.lerp(0.12, 0.17, difficulty.factor));
-  game.lean = THREE.MathUtils.lerp(game.lean, THREE.MathUtils.clamp((previousX - game.bikeX) * 1.8, -0.38, 0.38), 0.18);
+  game.bikeX = THREE.MathUtils.lerp(
+    game.bikeX,
+    targetX,
+    THREE.MathUtils.lerp(0.12, 0.17, difficulty.factor),
+  );
+  game.lean = THREE.MathUtils.lerp(
+    game.lean,
+    THREE.MathUtils.clamp((previousX - game.bikeX) * 1.8, -0.38, 0.38),
+    0.18,
+  );
 
   if (game.jumpHeight > 0 || game.jumpVelocity > 0) {
     game.jumpVelocity -= 8.8 * delta;
@@ -752,30 +1049,89 @@ function updateGame(delta) {
   const speedUnits = game.running ? game.speed / 3.6 : 0;
   if (game.running) {
     game.distance += (game.speed * delta) / 3600;
-    game.score += delta * game.speed * THREE.MathUtils.lerp(0.9, 1.28, difficulty.factor);
+    game.score +=
+      delta * game.speed * THREE.MathUtils.lerp(0.9, 1.28, difficulty.factor);
     game.spawnTimer -= delta;
+    game.itemTimer -= delta;
     if (game.spawnTimer <= 0) {
       spawnObstacle();
       game.spawnTimer = getSpawnDelay(difficulty);
     }
-    game.speed = Math.min(getTargetSpeed(difficulty), game.speed + delta * (1.65 + difficulty.level * 0.28));
+    if (game.itemTimer <= 0) {
+      spawnItem(difficulty);
+      game.itemTimer = getItemDelay(difficulty);
+    }
+    game.speed = Math.min(
+      getTargetSpeed(difficulty),
+      game.speed + delta * (1.65 + difficulty.level * 0.28),
+    );
+    updateHighScore();
+    if (game.comboTimer > 0) {
+      game.comboTimer = Math.max(0, game.comboTimer - delta);
+      if (game.comboTimer === 0) {
+        game.combo = 1;
+      }
+    }
   }
 
   roadMarkers.forEach((marker) => wrapZ(marker, speedUnits * delta, 38, -92));
-  roadsideObjects.forEach((object) => wrapZ(object, speedUnits * delta * 0.72, 42, -96));
+  roadsideObjects.forEach((object) =>
+    wrapZ(object, speedUnits * delta * 0.72, 42, -96),
+  );
   obstacles.forEach((obstacle) => {
     obstacle.position.z -= speedUnits * delta;
     obstacle.rotation.y += delta * 0.35;
     if (!obstacle.userData.passed && obstacle.position.z < PASS_Z) {
       obstacle.userData.passed = true;
-      game.score += 120;
+      const lateral = Math.abs(obstacle.position.x - game.bikeX);
+      const jumpedCone =
+        obstacle.userData.jumpClear < 999 && game.jumpHeight > 0.15;
+      const nearMiss =
+        lateral >= obstacle.userData.width &&
+        lateral < obstacle.userData.width + 0.46;
+      if (nearMiss || jumpedCone) {
+        bumpCombo(1);
+        awardScore(nearMiss ? 150 : 130, nearMiss ? "NEAR" : "JUMP");
+      } else {
+        awardScore(82);
+      }
     }
-    if (!obstacle.userData.hit && obstacle.position.z > -0.86 && obstacle.position.z < 0.56) {
+    if (
+      !obstacle.userData.hit &&
+      obstacle.position.z > -0.45 &&
+      obstacle.position.z < 0.28
+    ) {
       const lateral = Math.abs(obstacle.position.x - game.bikeX);
       const canJump = game.jumpHeight > obstacle.userData.jumpClear;
-      if (lateral < obstacle.userData.width && !canJump) {
+      if (
+        lateral < obstacle.userData.width &&
+        !canJump &&
+        game.shieldTimer > 0
+      ) {
+        obstacle.userData.hit = true;
+        bumpCombo(1);
+        awardScore(120, "GUARD");
+      } else if (lateral < obstacle.userData.width && !canJump) {
         obstacle.userData.hit = true;
         registerHit();
+      }
+    }
+  });
+
+  items.forEach((item) => {
+    item.position.z -= speedUnits * delta;
+    item.rotation.y += delta * 2.3;
+    item.position.y =
+      0.82 + Math.sin(clock.elapsedTime * 5.2 + item.position.x) * 0.06;
+    if (
+      !item.userData.collected &&
+      item.position.z > -0.72 &&
+      item.position.z < 0.72
+    ) {
+      const lateral = Math.abs(item.position.x - game.bikeX);
+      if (lateral < item.userData.radius) {
+        item.userData.collected = true;
+        applyItem(item);
       }
     }
   });
@@ -788,14 +1144,34 @@ function updateGame(delta) {
     }
   }
 
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (
+      items[index].position.z < BACK_DESPAWN_Z ||
+      items[index].userData.collected
+    ) {
+      obstacleGroup.remove(items[index]);
+      disposeObject(items[index]);
+      items.splice(index, 1);
+    }
+  }
+
   if (game.invulnerable > 0) {
     game.invulnerable = Math.max(0, game.invulnerable - delta);
   }
+  if (game.shieldTimer > 0) {
+    game.shieldTimer = Math.max(0, game.shieldTimer - delta);
+  }
+  if (game.statusTimer > 0) {
+    game.statusTimer = Math.max(0, game.statusTimer - delta);
+  }
 
   bikeRig.position.x = game.bikeX;
-  bikeRig.position.y = game.jumpHeight + Math.sin(clock.elapsedTime * 12) * (game.running ? 0.008 : 0.002);
+  bikeRig.position.y =
+    game.jumpHeight +
+    Math.sin(clock.elapsedTime * 12) * (game.running ? 0.008 : 0.002);
   bikeRig.rotation.z = game.lean;
-  bikeRig.rotation.x = game.jumpHeight > 0 ? Math.sin(clock.elapsedTime * 7) * 0.035 : 0;
+  bikeRig.rotation.x =
+    game.jumpHeight > 0 ? Math.sin(clock.elapsedTime * 7) * 0.035 : 0;
   riderGroup.rotation.z = game.lean * 0.16;
   riderGroup.rotation.x = game.jumpHeight > 0 ? -0.06 : 0;
 
@@ -803,8 +1179,8 @@ function updateGame(delta) {
     wheel.rotation.x += delta * (game.running ? game.speed : 16) * 0.18;
   });
 
-  cameraTarget.set(game.bikeX, 1.16 + game.jumpHeight * 0.35, 1.15);
-  controls.target.lerp(cameraTarget, 0.08);
+  cameraTarget.set(0, 1.18 + game.jumpHeight * 0.18, 1.08);
+  controls.target.lerp(cameraTarget, 0.045);
 }
 
 function registerHit() {
@@ -813,11 +1189,12 @@ function registerHit() {
   }
   game.lives -= 1;
   game.invulnerable = 1.1;
-  gameStatus.textContent = game.lives > 0 ? "Hit" : "Game Over";
+  resetCombo();
+  gameStatus.textContent = game.lives > 0 ? "HIT" : "GAME OVER";
   if (game.lives <= 0) {
     game.running = false;
     game.over = true;
-    startButton.textContent = "Start";
+    setStartButtonState();
     showGameOver();
   }
 }
@@ -826,7 +1203,11 @@ function moveLane(direction) {
   if (game.over) {
     resetGame();
   }
-  game.targetLane = THREE.MathUtils.clamp(game.targetLane + direction, 0, lanes.length - 1);
+  game.targetLane = THREE.MathUtils.clamp(
+    game.targetLane + direction,
+    0,
+    lanes.length - 1,
+  );
 }
 
 function jump() {
@@ -838,7 +1219,7 @@ function jump() {
   }
   game.running = true;
   game.jumpVelocity = 4.6;
-  startButton.textContent = "Pause";
+  setStartButtonState();
 }
 
 function toggleGame() {
@@ -846,7 +1227,7 @@ function toggleGame() {
     resetGame();
   }
   game.running = !game.running;
-  startButton.textContent = game.running ? "Pause" : "Start";
+  setStartButtonState();
 }
 
 function resetGame() {
@@ -858,9 +1239,16 @@ function resetGame() {
   game.score = 0;
   game.distance = 0;
   game.lives = 3;
+  game.combo = 1;
+  game.comboTimer = 0;
+  game.bestCombo = 1;
   game.speed = BASE_SPEED;
   game.spawnTimer = 0.8;
+  game.itemTimer = 1.7;
   game.invulnerable = 0;
+  game.shieldTimer = 0;
+  game.statusTimer = 0;
+  game.statusText = "";
   game.jumpHeight = 0;
   game.jumpVelocity = 0;
   bikeRig.position.set(0, 0, 0);
@@ -869,17 +1257,25 @@ function resetGame() {
     obstacleGroup.remove(obstacle);
     disposeObject(obstacle);
   });
-  startButton.textContent = "Start";
+  items.splice(0).forEach((item) => {
+    obstacleGroup.remove(item);
+    disposeObject(item);
+  });
+  setStartButtonState();
   hideGameOver();
   updateHud();
 }
 
 function handleKeydown(event) {
   if (event.key === "ArrowLeft" || event.key.toLowerCase() === "a") {
-    moveLane(1);
-  } else if (event.key === "ArrowRight" || event.key.toLowerCase() === "d") {
     moveLane(-1);
-  } else if (event.key === " " || event.key === "ArrowUp" || event.key.toLowerCase() === "w") {
+  } else if (event.key === "ArrowRight" || event.key.toLowerCase() === "d") {
+    moveLane(1);
+  } else if (
+    event.key === " " ||
+    event.key === "ArrowUp" ||
+    event.key.toLowerCase() === "w"
+  ) {
     event.preventDefault();
     jump();
   } else if (event.key.toLowerCase() === "p") {
@@ -888,6 +1284,7 @@ function handleKeydown(event) {
 }
 
 function showGameOver() {
+  updateHighScore();
   finalScoreValue.textContent = String(Math.floor(game.score)).padStart(4, "0");
   gameOverOverlay.setAttribute("aria-hidden", "false");
   gameOverOverlay.classList.add("is-visible");
@@ -904,14 +1301,25 @@ function updateHud() {
   distanceValue.textContent = game.distance.toFixed(1);
   speedValue.textContent = String(Math.round(game.speed));
   lifeValue.textContent = String(Math.max(0, game.lives));
+  comboValue.textContent = `x${game.combo}`;
+  highScoreValue.textContent = String(Math.floor(game.highScore)).padStart(
+    4,
+    "0",
+  );
   if (game.over) {
-    gameStatus.textContent = "Game Over";
+    gameStatus.textContent = "GAME OVER";
+  } else if (game.statusTimer > 0) {
+    gameStatus.textContent = game.statusText;
+  } else if (game.shieldTimer > 0) {
+    gameStatus.textContent = `SHIELD ${Math.ceil(game.shieldTimer)}`;
   } else if (!game.running) {
-    gameStatus.textContent = "Ready";
+    gameStatus.textContent = "READY";
   } else if (game.jumpHeight > 0.05) {
-    gameStatus.textContent = `Jump Lv ${difficulty.level + 1}`;
+    gameStatus.textContent = `JUMP LV ${difficulty.level + 1}`;
+  } else if (game.combo > 1) {
+    gameStatus.textContent = `COMBO x${game.combo}`;
   } else {
-    gameStatus.textContent = `Lv ${difficulty.level + 1}`;
+    gameStatus.textContent = `LV ${difficulty.level + 1}`;
   }
 }
 
@@ -927,97 +1335,33 @@ function animate() {
   renderer.render(scene, camera);
 
   diagnostics.frame += 1;
-  if (diagnostics.frame === 1 || diagnostics.frame % DIAGNOSTICS_FRAME_INTERVAL === 0) {
+  if (
+    diagnostics.frame === 1 ||
+    diagnostics.frame % DIAGNOSTICS_FRAME_INTERVAL === 0
+  ) {
     publishDiagnostics();
   }
 
   requestAnimationFrame(animate);
 }
 
-function createTankBadge(side) {
-  const badgeCanvas = document.createElement("canvas");
-  badgeCanvas.width = 256;
-  badgeCanvas.height = 80;
-  const context = badgeCanvas.getContext("2d");
-  context.clearRect(0, 0, badgeCanvas.width, badgeCanvas.height);
-  context.fillStyle = "#f1ead2";
-  context.strokeStyle = "#17191d";
-  context.lineWidth = 5;
-  drawRoundRect(context, 9, 14, 238, 52, 13);
-  context.fill();
-  context.stroke();
-
-  const texture = new THREE.CanvasTexture(badgeCanvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide });
-  const badge = new THREE.Mesh(new THREE.PlaneGeometry(0.46, 0.15), material);
-  badge.position.set(side * 0.5, 1.48, -0.36);
-  badge.rotation.y = side > 0 ? Math.PI * 0.5 : -Math.PI * 0.5;
-  badge.rotation.z = side > 0 ? -0.03 : 0.03;
-  return badge;
-}
-
-function createFender(z, y, radius, tube, material) {
-  const fender = new THREE.Mesh(new THREE.TorusGeometry(radius, tube, 10, 48, Math.PI * 1.12), material);
-  fender.position.set(0, y + 0.04, z);
-  fender.rotation.y = Math.PI * 0.5;
-  fender.rotation.z = Math.PI * 0.94;
-  fender.scale.x = 0.58;
-  return fender;
-}
-
-function createGaugeCluster() {
-  const cluster = new THREE.Group();
-  [-0.13, 0.13].forEach((x) => {
-    const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.095, 0.1, 0.07, 24), materials.chrome);
-    cup.position.set(x, 0, 0);
-    cup.rotation.x = Math.PI * 0.5;
-    const face = new THREE.Mesh(new THREE.CylinderGeometry(0.082, 0.082, 0.012, 24), new THREE.MeshBasicMaterial({ color: "#111318" }));
-    face.position.set(x, 0, -0.042);
-    face.rotation.x = Math.PI * 0.5;
-    cluster.add(cup, face);
-  });
-  cluster.add(capsuleBetween(v3(-0.18, -0.04, 0.02), v3(0.18, -0.04, 0.02), 0.018, materials.frame));
-  return cluster;
-}
-
-function createMirror(side) {
-  const group = new THREE.Group();
-  const stalk = capsuleBetween(v3(side * 0.58, 1.56, -1.0), v3(side * 0.92, 1.78, -1.08), 0.018, materials.chrome);
-  const mirror = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.035, 24), materials.chrome);
-  mirror.position.set(side * 1.0, 1.82, -1.1);
-  mirror.rotation.x = Math.PI * 0.5;
-  mirror.rotation.y = side * 0.22;
-  group.add(stalk, mirror);
-  return group;
-}
-
-function createSpring(start, end, radius, turns) {
-  const group = new THREE.Group();
-  group.add(capsuleBetween(start, end, 0.025, materials.spoke));
-
-  const direction = new THREE.Vector3().subVectors(end, start);
-  const length = direction.length();
-  const points = [];
-  const steps = turns * 10;
-  for (let index = 0; index <= steps; index += 1) {
-    const t = index / steps;
-    const angle = t * turns * Math.PI * 2;
-    points.push(new THREE.Vector3(Math.cos(angle) * radius, t * length - length / 2, Math.sin(angle) * radius));
-  }
-  const spring = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), steps, 0.012, 5), materials.tank);
-  spring.position.copy(start).add(end).multiplyScalar(0.5);
-  spring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
-  group.add(spring);
-  return group;
-}
-
 function capsuleBetween(start, end, radius, material) {
   const direction = new THREE.Vector3().subVectors(end, start);
   const length = direction.length();
-  const mesh = new THREE.Mesh(new THREE.CapsuleGeometry(radius, Math.max(length - radius * 2, 0.02), 8, 18), material);
+  const mesh = new THREE.Mesh(
+    new THREE.CapsuleGeometry(
+      radius,
+      Math.max(length - radius * 2, 0.02),
+      8,
+      18,
+    ),
+    material,
+  );
   mesh.position.copy(start).add(end).multiplyScalar(0.5);
-  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
+  mesh.quaternion.setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    direction.normalize(),
+  );
   return mesh;
 }
 
@@ -1048,7 +1392,7 @@ function captureScene() {
   const link = document.createElement("a");
   const date = new Date().toISOString().slice(0, 10);
   link.href = renderer.domElement.toDataURL("image/png");
-  link.download = `classic-obstacle-ride-${date}.png`;
+  link.download = `bicycle-dash-${date}.png`;
   link.click();
 }
 
@@ -1069,22 +1413,32 @@ function publishDiagnostics() {
       lane: game.targetLane,
       bikeX: Number(game.bikeX.toFixed(3)),
       score: Math.floor(game.score),
+      highScore: Math.floor(game.highScore),
+      combo: game.combo,
+      bestCombo: game.bestCombo,
+      comboTimer: Number(game.comboTimer.toFixed(2)),
       distance: Number(game.distance.toFixed(2)),
       lives: game.lives,
       speed: Math.round(game.speed),
+      shieldTimer: Number(game.shieldTimer.toFixed(2)),
       difficultyLevel: difficulty.level,
       difficultyFactor: Number(difficulty.factor.toFixed(3)),
       targetSpeed: Math.round(getTargetSpeed(difficulty)),
       maxObstacles: getMaxObstacleCount(difficulty),
       obstacles: obstacles.length,
-      obstacleZ: obstacles.map((obstacle) => Number(obstacle.position.z.toFixed(2))).slice(0, 5),
+      items: items.length,
+      obstacleZ: obstacles
+        .map((obstacle) => Number(obstacle.position.z.toFixed(2)))
+        .slice(0, 5),
       jumpHeight: Number(game.jumpHeight.toFixed(3)),
       model: modelState.source,
       modelLoaded: Boolean(modelState.imported),
       modelWheelNodes: wheelMeshes.length,
-      wheelRotationX: wheelMeshes.length ? Number(wheelMeshes[0].rotation.x.toFixed(3)) : null,
+      wheelRotationX: wheelMeshes.length
+        ? Number(wheelMeshes[0].rotation.x.toFixed(3))
+        : null,
       modelLoadError: modelState.loadError,
-      travelDirection: "bike-front-positive-z",
+      travelDirection: "bicycle-front-positive-z",
     },
   });
 }
@@ -1110,24 +1464,10 @@ function resize() {
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
   if (width < 820) {
-    camera.position.set(3.7, 2.25, -7.8);
+    camera.position.set(0, 2.8, -11.2);
   } else {
-    camera.position.set(4.8, 2.35, -6.8);
+    camera.position.set(0.35, 2.9, -10.8);
   }
-}
-
-function drawRoundRect(context, x, y, width, height, radius) {
-  context.beginPath();
-  context.moveTo(x + radius, y);
-  context.lineTo(x + width - radius, y);
-  context.quadraticCurveTo(x + width, y, x + width, y + radius);
-  context.lineTo(x + width, y + height - radius);
-  context.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-  context.lineTo(x + radius, y + height);
-  context.quadraticCurveTo(x, y + height, x, y + height - radius);
-  context.lineTo(x, y + radius);
-  context.quadraticCurveTo(x, y, x + radius, y);
-  context.closePath();
 }
 
 function v3(x, y, z) {
