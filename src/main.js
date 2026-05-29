@@ -38,6 +38,15 @@ const game = {
   coins: 0,
   nearMisses: 0,
   jumpDodges: 0,
+  perfects: 0,
+  perfectChain: 0,
+  riskScore: 0,
+  riskLane: null,
+  riskTimer: 0,
+  riskCooldown: 1.5,
+  eventType: "",
+  eventTimer: 0,
+  eventCooldown: 5.5,
   missionIndex: 0,
   highScore: readSessionHighScore(),
   speed: 26,
@@ -73,6 +82,13 @@ const BACK_DESPAWN_Z = -12;
 const PASS_Z = -1.28;
 const HIT_ZONE_FRONT_Z = 0.28;
 const HIT_ZONE_BACK_Z = -0.45;
+const PERFECT_NEAR_MARGIN = 0.15;
+const PERFECT_JUMP_WINDOW = 0.2;
+const PERFECT_DUCK_HEIGHT = 0.12;
+const RISK_ROUTE_DURATION = 8.2;
+const RISK_ROUTE_SCORE_MULTIPLIER = 1.45;
+const RANDOM_EVENT_MIN_DURATION = 7;
+const RANDOM_EVENT_MAX_DURATION = 11;
 const JUMP_GRAVITY = 10.6;
 const JUMP_BASE_VELOCITY = 4.42;
 const JUMP_MIN_VELOCITY = 3.18;
@@ -83,8 +99,10 @@ const MAX_JUMP_CHAIN = 5;
 const missions = [
   { label: "COINを3個集める", type: "coins", target: 3, reward: 900 },
   { label: "NEARを3回決める", type: "nearMisses", target: 3, reward: 1200 },
+  { label: "PERFECTを3回決める", type: "perfects", target: 3, reward: 2100 },
   { label: "JUMP回避を4回決める", type: "jumpDodges", target: 4, reward: 1500 },
   { label: "COMBO x8到達", type: "combo", target: 8, reward: 1800 },
+  { label: "RISKで500点稼ぐ", type: "riskScore", target: 500, reward: 2300 },
   { label: "LV 25到達", type: "level", target: 25, reward: 2400 },
   { label: "RUSH中に走り切る", type: "rush", target: 1, reward: 2600 },
 ];
@@ -122,12 +140,15 @@ controls.target.set(0, 1.2, 1.1);
 const clock = new THREE.Clock();
 const diagnostics = { node: null, frame: 0 };
 const cameraTarget = new THREE.Vector3();
+const defaultFogColor = new THREE.Color("#dce6e8");
+const eventFogColor = new THREE.Color("#bdc7c9");
 let hudRefreshTimer = 0;
 const wheelMeshes = [];
 const roadMarkers = [];
 const roadsideObjects = [];
 const obstacles = [];
 const items = [];
+let riskRouteMarker = null;
 const modelState = {
   source: "light-bicycle",
   imported: null,
@@ -342,6 +363,12 @@ function createMaterials() {
       roughness: 0.42,
       metalness: 0.08,
     }),
+    riskRoute: new THREE.MeshBasicMaterial({
+      color: "#ffd15c",
+      transparent: true,
+      opacity: 0.18,
+      depthWrite: false,
+    }),
     oil: new THREE.MeshStandardMaterial({
       color: "#10151a",
       roughness: 0.18,
@@ -408,6 +435,15 @@ function createRoad() {
   );
   road.rotation.x = -Math.PI * 0.5;
   roadGroup.add(road);
+
+  riskRouteMarker = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.98, 150),
+    materials.riskRoute,
+  );
+  riskRouteMarker.rotation.x = -Math.PI * 0.5;
+  riskRouteMarker.position.y = 0.014;
+  riskRouteMarker.visible = false;
+  roadGroup.add(riskRouteMarker);
 
   [-3.15, 3.15].forEach((x) => {
     const shoulder = new THREE.Mesh(
@@ -1291,10 +1327,15 @@ function getTargetSpeed(difficulty) {
 }
 
 function getSpawnDelay(difficulty) {
-  const center =
+  let center =
     THREE.MathUtils.lerp(1.0, 0.19, difficulty.pressure) -
     difficulty.nightmare * 0.045 -
     difficulty.absurd * 0.035;
+  if (game.eventType === "traffic") {
+    center *= 0.72;
+  } else if (game.eventType === "fog") {
+    center *= 0.9;
+  }
   const jitter = THREE.MathUtils.lerp(0.24, 0.035, difficulty.factor);
   return THREE.MathUtils.randFloat(Math.max(0.11, center - jitter), center + jitter);
 }
@@ -1308,9 +1349,10 @@ function getItemDelay(difficulty) {
 }
 
 function getMaxObstacleCount(difficulty) {
+  const eventExtra = game.eventType === "traffic" ? 3 : game.eventType === "fog" ? 1 : 0;
   return Math.round(
     THREE.MathUtils.lerp(4, MAX_OBSTACLES, Math.max(difficulty.pressure, difficulty.nightmare)),
-  );
+  ) + eventExtra;
 }
 
 function bumpCombo(amount = 1) {
@@ -1338,12 +1380,38 @@ function startRush() {
   setStatusMessage("RUSH MODE", 1.2);
 }
 
+function getRiskLaneLabel(lane = game.riskLane) {
+  return ["RIGHT", "CENTER", "LEFT"][lane] || "";
+}
+
+function isOnRiskRoute() {
+  return (
+    game.riskLane !== null &&
+    game.riskTimer > 0 &&
+    Math.abs(game.bikeX - lanes[game.riskLane]) < 0.5
+  );
+}
+
+function getEventScoreMultiplier() {
+  return game.eventTimer > 0 ? 1.16 : 1;
+}
+
+function addScore(amount, countsForRisk = false) {
+  game.score += amount;
+  if (countsForRisk && isOnRiskRoute()) {
+    game.riskScore += amount;
+  }
+}
+
 function awardScore(base, label = "") {
   const rushBonus = game.rushTimer > 0 ? 1.7 : 1;
-  const amount = Math.round(base * game.combo * rushBonus);
-  game.score += amount;
+  const riskBonus = isOnRiskRoute() ? RISK_ROUTE_SCORE_MULTIPLIER : 1;
+  const eventBonus = getEventScoreMultiplier();
+  const amount = Math.round(base * game.combo * rushBonus * riskBonus * eventBonus);
+  addScore(amount, riskBonus > 1);
   if (label) {
-    setStatusMessage(`${label} +${amount}`);
+    const prefix = riskBonus > 1 ? "RISK " : "";
+    setStatusMessage(`${prefix}${label} +${amount}`);
   }
   updateHighScore();
 }
@@ -1356,6 +1424,8 @@ function getMissionProgress(mission, difficulty = getDifficulty()) {
   if (mission.type === "coins") return game.coins;
   if (mission.type === "nearMisses") return game.nearMisses;
   if (mission.type === "jumpDodges") return game.jumpDodges;
+  if (mission.type === "perfects") return game.perfects;
+  if (mission.type === "riskScore") return Math.floor(game.riskScore);
   if (mission.type === "combo") return game.bestCombo;
   if (mission.type === "level") return difficulty.level;
   if (mission.type === "rush") return game.rushTimer > 0 ? 1 : 0;
@@ -1373,6 +1443,8 @@ function checkMission() {
   game.coins = 0;
   game.nearMisses = 0;
   game.jumpDodges = 0;
+  game.perfects = 0;
+  game.riskScore = 0;
   game.bestCombo = game.combo;
   chargeRush(28);
   setStatusMessage(`GOAL +${reward}`, 1.35);
@@ -1400,6 +1472,72 @@ function getObstacleHitType(obstacle, lateral) {
   return game.jumpHeight > obstacle.userData.jumpClear ? "" : "hit";
 }
 
+function getPassResult(obstacle, lateral) {
+  const nearGap = lateral - obstacle.userData.width;
+  const nearMiss = nearGap >= 0 && nearGap < 0.46;
+  const jumpedObstacle =
+    obstacle.userData.scoreJump &&
+    lateral < obstacle.userData.width &&
+    game.jumpHeight > obstacle.userData.jumpClear;
+  const duckedAirGate =
+    obstacle.userData.collision === "air" &&
+    lateral < obstacle.userData.width &&
+    game.jumpHeight < obstacle.userData.airHitMin * 0.45;
+
+  if (nearMiss && nearGap < PERFECT_NEAR_MARGIN) {
+    return { kind: "perfect", label: "PERFECT", base: 320 };
+  }
+  if (
+    jumpedObstacle &&
+    game.jumpHeight - obstacle.userData.jumpClear < PERFECT_JUMP_WINDOW
+  ) {
+    return { kind: "perfectJump", label: "PERFECT", base: 300 };
+  }
+  if (duckedAirGate && game.jumpHeight < PERFECT_DUCK_HEIGHT) {
+    return { kind: "perfectLow", label: "PERFECT", base: 310 };
+  }
+  if (nearMiss) {
+    return { kind: "near", label: "NEAR", base: 150 };
+  }
+  if (jumpedObstacle) {
+    return { kind: "jump", label: "JUMP", base: 130 };
+  }
+  if (duckedAirGate) {
+    return { kind: "low", label: "LOW", base: 145 };
+  }
+  return null;
+}
+
+function applyPassReward(result) {
+  if (!result) {
+    awardScore(82);
+    return;
+  }
+  const isPerfect = result.kind.startsWith("perfect");
+  if (result.kind === "near" || result.kind === "perfect") {
+    game.nearMisses += 1;
+  }
+  if (result.kind === "jump" || result.kind === "perfectJump") {
+    game.jumpDodges += 1;
+  }
+  if (isPerfect) {
+    game.perfects += 1;
+    game.perfectChain += 1;
+    bumpCombo(2);
+    chargeRush(18);
+    awardScore(result.base + game.perfectChain * 24, result.label);
+    if (game.perfectChain > 0 && game.perfectChain % 3 === 0) {
+      awardScore(220 + game.perfectChain * 20, "CHAIN");
+    }
+  } else {
+    game.perfectChain = 0;
+    bumpCombo(1);
+    chargeRush(result.kind === "near" ? 12 : 10);
+    awardScore(result.base, result.label);
+  }
+  checkMission();
+}
+
 function applySlipTrap() {
   if (game.invulnerable > 0) {
     return;
@@ -1414,13 +1552,120 @@ function applySlipTrap() {
   );
   game.speed = Math.max(BASE_SPEED, game.speed * 0.92);
   game.invulnerable = 0.16;
+  game.perfectChain = 0;
   resetCombo();
   setStatusMessage("SLIP", 0.85);
 }
 
+function chooseRiskLane() {
+  const previousLane = game.riskLane;
+  let nextLane = Math.floor(Math.random() * lanes.length);
+  if (previousLane !== null && lanes.length > 1 && nextLane === previousLane) {
+    nextLane = (nextLane + (Math.random() < 0.5 ? 1 : 2)) % lanes.length;
+  }
+  game.riskLane = nextLane;
+  game.riskTimer = RISK_ROUTE_DURATION;
+  setStatusMessage(`RISK ${getRiskLaneLabel()} +45%`, 1.3);
+}
+
+function updateRiskRoute(delta, difficulty) {
+  if (!game.running || game.over) {
+    updateRiskRouteMarker();
+    return;
+  }
+  if (game.riskTimer > 0) {
+    game.riskTimer = Math.max(0, game.riskTimer - delta);
+  } else {
+    game.riskCooldown -= delta;
+    if (game.riskCooldown <= 0) {
+      chooseRiskLane();
+      game.riskCooldown = THREE.MathUtils.randFloat(
+        4.8,
+        7.6 - difficulty.chaos * 1.4,
+      );
+    }
+  }
+  updateRiskRouteMarker();
+}
+
+function updateRiskRouteMarker() {
+  if (!riskRouteMarker) {
+    return;
+  }
+  riskRouteMarker.visible = game.riskLane !== null && game.riskTimer > 0;
+  if (!riskRouteMarker.visible) {
+    return;
+  }
+  riskRouteMarker.position.x = lanes[game.riskLane];
+  materials.riskRoute.opacity =
+    0.14 + Math.sin(clock.elapsedTime * 5.2) * 0.04 + (isOnRiskRoute() ? 0.08 : 0);
+}
+
+function getEventLabel(type = game.eventType) {
+  if (type === "gust") return "GUST";
+  if (type === "fog") return "FOG";
+  if (type === "traffic") return "RUSH HOUR";
+  return "";
+}
+
+function startRandomEvent(difficulty) {
+  const candidates =
+    difficulty.level < 12 ? ["gust", "fog"] : ["gust", "fog", "traffic"];
+  game.eventType = candidates[Math.floor(Math.random() * candidates.length)];
+  game.eventTimer =
+    THREE.MathUtils.randFloat(RANDOM_EVENT_MIN_DURATION, RANDOM_EVENT_MAX_DURATION) +
+    difficulty.nightmare * 3;
+  setStatusMessage(`${getEventLabel()} EVENT`, 1.25);
+}
+
+function updateRandomEvent(delta, difficulty) {
+  if (!game.running || game.over) {
+    applyEventVisuals();
+    return;
+  }
+  if (game.eventTimer > 0) {
+    game.eventTimer = Math.max(0, game.eventTimer - delta);
+    if (game.eventTimer === 0) {
+      game.eventType = "";
+      game.eventCooldown = THREE.MathUtils.randFloat(
+        10.5,
+        16 - difficulty.chaos * 3.2,
+      );
+      setStatusMessage("CLEAR", 0.7);
+    }
+  } else {
+    game.eventCooldown -= delta;
+    if (game.eventCooldown <= 0) {
+      startRandomEvent(difficulty);
+    }
+  }
+  applyEventVisuals();
+}
+
+function applyEventVisuals() {
+  if (game.eventType === "fog") {
+    scene.background.copy(eventFogColor);
+    scene.fog.color.copy(eventFogColor);
+    scene.fog.near = 7.5;
+    scene.fog.far = 27;
+    return;
+  }
+  scene.background.copy(defaultFogColor);
+  scene.fog.color.copy(defaultFogColor);
+  scene.fog.near = 14;
+  scene.fog.far = 48;
+}
+
 function updateGame(delta) {
   const difficulty = getDifficulty();
-  const targetX = lanes[game.targetLane];
+  updateRiskRoute(delta, difficulty);
+  updateRandomEvent(delta, difficulty);
+
+  const eventDrift =
+    game.eventType === "gust"
+      ? Math.sin(clock.elapsedTime * 2.6) * THREE.MathUtils.lerp(0.15, 0.34, difficulty.chaos)
+      : 0;
+  const targetX = lanes[game.targetLane] + eventDrift;
   const previousX = game.bikeX;
   game.bikeX = THREE.MathUtils.lerp(
     game.bikeX,
@@ -1458,11 +1703,14 @@ function updateGame(delta) {
   const speedUnits = game.running ? game.speed / 3.6 : 0;
   if (game.running) {
     game.distance += (game.speed * delta) / 3600;
-    game.score +=
+    const runScore =
       delta *
       game.speed *
       THREE.MathUtils.lerp(0.9, 1.42, difficulty.factor) *
-      (game.rushTimer > 0 ? 1.45 : 1);
+      (game.rushTimer > 0 ? 1.45 : 1) *
+      (isOnRiskRoute() ? RISK_ROUTE_SCORE_MULTIPLIER : 1) *
+      getEventScoreMultiplier();
+    addScore(runScore, isOnRiskRoute());
     game.spawnTimer -= delta;
     game.itemTimer -= delta;
     if (game.spawnTimer <= 0) {
@@ -1544,30 +1792,7 @@ function updateGame(delta) {
         return;
       }
       const lateral = Math.abs(obstacle.position.x - game.bikeX);
-      const jumpedObstacle =
-        obstacle.userData.scoreJump &&
-        lateral < obstacle.userData.width &&
-        game.jumpHeight > obstacle.userData.jumpClear;
-      const duckedAirGate =
-        obstacle.userData.collision === "air" &&
-        lateral < obstacle.userData.width &&
-        game.jumpHeight < obstacle.userData.airHitMin * 0.45;
-      const nearMiss =
-        lateral >= obstacle.userData.width &&
-        lateral < obstacle.userData.width + 0.46;
-      if (nearMiss || jumpedObstacle || duckedAirGate) {
-        if (nearMiss) game.nearMisses += 1;
-        if (jumpedObstacle) game.jumpDodges += 1;
-        bumpCombo(1);
-        chargeRush(nearMiss ? 12 : 10);
-        awardScore(
-          nearMiss ? 150 : duckedAirGate ? 145 : 130,
-          nearMiss ? "NEAR" : duckedAirGate ? "LOW" : "JUMP",
-        );
-        checkMission();
-      } else {
-        awardScore(82);
-      }
+      applyPassReward(getPassResult(obstacle, lateral));
     }
   });
 
@@ -1642,6 +1867,7 @@ function registerHit() {
   }
   game.lives -= 1;
   game.invulnerable = 0.52;
+  game.perfectChain = 0;
   resetCombo();
   if (game.lives > 0) {
     setStatusMessage("HIT", 0.8);
@@ -1715,6 +1941,15 @@ function resetGame() {
   game.coins = 0;
   game.nearMisses = 0;
   game.jumpDodges = 0;
+  game.perfects = 0;
+  game.perfectChain = 0;
+  game.riskScore = 0;
+  game.riskLane = null;
+  game.riskTimer = 0;
+  game.riskCooldown = 1.5;
+  game.eventType = "";
+  game.eventTimer = 0;
+  game.eventCooldown = 5.5;
   game.speed = BASE_SPEED;
   game.spawnTimer = 0.8;
   game.itemTimer = 1.7;
@@ -1727,6 +1962,8 @@ function resetGame() {
   game.jumpCooldown = 0;
   game.jumpChain = 0;
   game.groundTimer = 1;
+  updateRiskRouteMarker();
+  applyEventVisuals();
   bikeRig.position.set(0, 0, 0);
   bikeRig.rotation.set(0, 0, 0);
   obstacles.splice(0).forEach((obstacle) => {
@@ -1808,6 +2045,10 @@ function updateHud() {
     gameStatus.textContent = `RUSH ${Math.ceil(game.rushTimer)}`;
   } else if (game.shieldTimer > 0) {
     gameStatus.textContent = `SHIELD ${Math.ceil(game.shieldTimer)}`;
+  } else if (game.eventTimer > 0) {
+    gameStatus.textContent = `${getEventLabel()} ${Math.ceil(game.eventTimer)}`;
+  } else if (game.riskTimer > 0) {
+    gameStatus.textContent = `RISK ${getRiskLaneLabel()}`;
   } else if (game.jumpHeight > 0.05) {
     gameStatus.textContent = "JUMP";
   } else if (game.combo > 1) {
@@ -1911,6 +2152,13 @@ function publishDiagnostics() {
       combo: game.combo,
       bestCombo: game.bestCombo,
       comboTimer: Number(game.comboTimer.toFixed(2)),
+      perfects: game.perfects,
+      perfectChain: game.perfectChain,
+      riskLane: game.riskLane,
+      riskTimer: Number(game.riskTimer.toFixed(2)),
+      riskScore: Math.floor(game.riskScore),
+      eventType: game.eventType,
+      eventTimer: Number(game.eventTimer.toFixed(2)),
       rushMeter: Math.floor(game.rushMeter),
       rushTimer: Number(game.rushTimer.toFixed(2)),
       mission: getMission().label,

@@ -90,6 +90,10 @@ button {
   display: none;
 }
 
+.status-pill:not(:empty) {
+  display: block;
+}
+
 .game-over-overlay {
   pointer-events: auto;
 }
