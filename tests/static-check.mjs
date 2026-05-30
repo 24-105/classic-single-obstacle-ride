@@ -1,13 +1,14 @@
 import { readFile } from "node:fs/promises";
 import assert from "node:assert/strict";
 
-const [html, js, css, readme, robots, sitemap] = await Promise.all([
+const [html, js, css, readme, robots, sitemap, favicon] = await Promise.all([
   readFile("index.html", "utf8"),
   readFile("src/main.js", "utf8"),
   readFile("src/styles.css", "utf8"),
   readFile("README.md", "utf8"),
   readFile("robots.txt", "utf8"),
   readFile("sitemap.xml", "utf8"),
+  readFile("favicon.svg", "utf8"),
 ]);
 
 function numberConstant(name) {
@@ -33,6 +34,13 @@ assert.match(js, /function spawnJumpChicane/);
 assert.match(js, /function spawnConstructionSqueeze/);
 assert.match(js, /function getResultRank/);
 assert.match(js, /function setCommandButtonsState/);
+assert.match(js, /function loadRecommendCards/);
+assert.match(js, /function resolveRecommendPageMeta/);
+assert.match(js, /function extractRecommendGenre/);
+assert.match(js, /function findPreferredFaviconLink/);
+assert.match(js, /let recommendCardsLoaded = false;/);
+assert.match(js, /function showGameOver\(\) \{[\s\S]*loadRecommendCards\(\);[\s\S]*gameOverOverlay\.classList\.add\("is-visible"\);/);
+assert.doesNotMatch(js, /resetGame\(\);\n\s+loadRecommendCards\(\);/);
 assert.match(js, /const disabled = !game\.running \|\| game\.over;/);
 assert.match(js, /if \(!game\.running \|\| game\.over\) \{\n\s+return;\n\s+\}/);
 assert.match(js, /if \(rankScore >= 380\) return "SSS";/);
@@ -97,9 +105,14 @@ assert.equal(
 
 assert.match(html, /<title>自転車ダッシュ \| スマホで遊べる3D障害物回避ゲーム<\/title>/);
 assert.match(html, /name="description"/);
+assert.match(html, /name="application-name" content="自転車ダッシュ"/);
+assert.match(html, /name="apple-mobile-web-app-title" content="自転車ダッシュ"/);
 assert.match(html, /property="og:title"/);
-assert.match(html, /name="twitter:card" content="summary_large_image"/);
+assert.match(html, /property="og:image"[\s\S]*content="https:\/\/24-105\.github\.io\/classic-single-obstacle-ride\/favicon\.svg"/);
+assert.match(html, /name="twitter:card" content="summary"/);
+assert.match(html, /name="twitter:image"[\s\S]*content="https:\/\/24-105\.github\.io\/classic-single-obstacle-ride\/favicon\.svg"/);
 assert.match(html, /rel="canonical" href="https:\/\/24-105\.github\.io\/classic-single-obstacle-ride\/"/);
+assert.match(html, /<link rel="icon" href="\.\/favicon\.svg" type="image\/svg\+xml" \/>/);
 assert.match(html, /id="segmentStrip"/);
 assert.match(html, /id="segmentText"/);
 assert.match(html, /id="finalRankValue"/);
@@ -107,9 +120,12 @@ assert.match(html, /id="finalComboValue"/);
 assert.match(html, /id="finalSkillValue"/);
 assert.match(html, /class="game-over-thanks"/);
 assert.match(html, /おすすめ/);
-assert.match(html, /Coming soon/);
+assert.match(html, /href="https:\/\/24-105\.github\.io\/machi-narabe\/"/);
+assert.match(html, /href="https:\/\/24-105\.github\.io\/kameposu\/"/);
+assert.match(html, /href="https:\/\/24-105\.github\.io\/hitoyo-saishucho\/"/);
 assert.match(html, /ブックマークしてまた遊んでね/);
 assert.doesNotMatch(html, />0{4,}</);
+assert.doesNotMatch(html, /Coming soon/);
 assert.doesNotMatch(html, /目標/);
 assert.doesNotMatch(html, /v3|START|RESET|PAUSE|RUSH|SCORE|BEST|GOAL|ライド操作/);
 
@@ -119,6 +135,10 @@ assert.match(css, /\.game-over-main-stat/);
 assert.match(css, /\.game-over-thanks/);
 assert.match(css, /\.recommend-panel/);
 assert.match(css, /\.recommend-card/);
+assert.match(css, /\.recommend-card-art/);
+assert.match(css, /\.recommend-favicon/);
+assert.match(css, /\.recommend-card-copy :empty/);
+assert.match(css, /\.game-over-overlay\.is-visible \{\n\s+opacity: 1;\n\s+pointer-events: auto;/);
 assert.match(css, /\.segment-strip/);
 assert.match(css, /\.command-button:disabled/);
 assert.match(css, /\.command-button:not\(:disabled\):active/);
@@ -136,8 +156,16 @@ assert.ok(ldJsonMatch, "JSON-LD is missing");
 const structuredData = JSON.parse(ldJsonMatch[1]);
 assert.equal(structuredData["@type"], "VideoGame");
 assert.equal(structuredData.name, "自転車ダッシュ");
+assert.equal(structuredData.applicationCategory, "GameApplication");
+assert.deepEqual(structuredData.gamePlatform, ["Web browser", "Mobile browser"]);
+assert.equal(structuredData.genre[0], "障害物回避");
+assert.equal(structuredData.playMode, "SinglePlayer");
 assert.equal(structuredData.isAccessibleForFree, true);
+assert.equal(structuredData.image, "https://24-105.github.io/classic-single-obstacle-ride/favicon.svg");
+assert.equal(structuredData.offers.price, "0");
 
 assert.match(robots, /User-agent: \*/);
 assert.match(robots, /Sitemap: https:\/\/24-105\.github\.io\/classic-single-obstacle-ride\/sitemap\.xml/);
 assert.match(sitemap, /<loc>https:\/\/24-105\.github\.io\/classic-single-obstacle-ride\/<\/loc>/);
+assert.match(favicon, /<svg/);
+assert.match(favicon, /aria-label="自転車ダッシュ"/);

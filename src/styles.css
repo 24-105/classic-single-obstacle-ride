@@ -495,7 +495,7 @@ h1 {
 
 .game-over-overlay.is-visible {
   opacity: 1;
-  pointer-events: none;
+  pointer-events: auto;
   transform: scale(1);
 }
 
@@ -635,11 +635,13 @@ h1 {
 .recommend-panel {
   display: grid;
   width: min(430px, 100%);
-  gap: 10px;
-  padding: 12px;
+  min-width: 0;
+  gap: 9px;
+  padding: 10px;
   border: 1px solid rgb(240 191 57 / 34%);
   border-radius: 8px;
   background: #fff8df;
+  text-align: left;
 }
 
 .recommend-heading {
@@ -669,22 +671,94 @@ h1 {
 
 .recommend-list {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  min-width: 0;
+  grid-auto-columns: minmax(176px, 72%);
+  grid-auto-flow: column;
+  gap: 8px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding-bottom: 2px;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+
+.recommend-list::-webkit-scrollbar {
+  display: none;
 }
 
 .recommend-card {
   display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   min-width: 0;
-  min-height: 44px;
-  align-content: center;
-  gap: 4px;
+  min-height: 48px;
+  align-items: center;
+  gap: 8px;
   padding: 8px;
   border: 1px solid rgb(20 32 50 / 10%);
   border-radius: 8px;
   color: var(--ink);
   background: rgb(255 255 255 / 72%);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 70%);
+  scroll-snap-align: start;
+  text-decoration: none;
+}
+
+.recommend-card-art {
+  position: relative;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  overflow: hidden;
+  border: 1px solid rgb(124 74 0 / 16%);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 62%), rgb(255 248 223 / 46%)),
+    var(--amber);
+  place-items: center;
+}
+
+.recommend-card-art::before {
+  position: absolute;
+  right: -3px;
+  bottom: 4px;
+  left: -3px;
+  height: 9px;
+  border-radius: 999px;
+  background: rgb(124 74 0 / 12%);
+  content: "";
+}
+
+.recommend-card-art.is-empty::before {
+  opacity: 0;
+}
+
+.recommend-card-art.is-empty {
+  background: #f7faf8;
+}
+
+.recommend-favicon {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  filter: drop-shadow(0 2px 0 rgb(23 35 48 / 14%));
+  object-fit: contain;
+}
+
+.recommend-favicon.is-empty {
+  opacity: 0;
+}
+
+.recommend-card-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.recommend-card-copy :empty {
+  display: none;
 }
 
 .recommend-card em {
@@ -706,6 +780,35 @@ h1 {
   font-weight: 950;
   text-overflow: clip;
   white-space: nowrap;
+}
+
+.recommend-card small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recommend-card b {
+  display: grid;
+  min-width: 34px;
+  min-height: 28px;
+  padding: 0 7px;
+  border-radius: 8px;
+  color: #ffffff;
+  background: linear-gradient(180deg, #198e97, #0f6870);
+  box-shadow: 0 8px 16px rgb(21 127 135 / 18%);
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 950;
+  place-items: center;
+}
+
+.recommend-card:active {
+  transform: translateY(1px);
 }
 
 @keyframes game-over-pop {
@@ -925,7 +1028,7 @@ h1 {
   }
 
   .recommend-list {
-    display: none;
+    grid-auto-columns: minmax(168px, 76%);
   }
 
   .game-over-overlay {
@@ -997,6 +1100,25 @@ h1 {
     padding: 8px 9px;
   }
 
+  .recommend-card {
+    min-height: 44px;
+    padding: 8px;
+  }
+
+  .recommend-card-art {
+    width: 32px;
+    height: 32px;
+  }
+
+  .recommend-favicon {
+    width: 26px;
+    height: 26px;
+  }
+
+  .recommend-card small {
+    display: none;
+  }
+
   .recommend-heading span {
     font-size: 11px;
   }
@@ -1052,6 +1174,38 @@ h1 {
   .recommend-panel {
     margin-top: 0;
     padding: 7px 8px;
+  }
+
+  .recommend-list {
+    grid-auto-columns: minmax(156px, 78%);
+  }
+
+  .recommend-card {
+    min-height: 42px;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 7px;
+    padding: 7px;
+  }
+
+  .recommend-card-art {
+    width: 30px;
+    height: 30px;
+  }
+
+  .recommend-favicon {
+    width: 24px;
+    height: 24px;
+  }
+
+  .recommend-card strong {
+    font-size: 12px;
+  }
+
+  .recommend-card b {
+    min-width: 34px;
+    min-height: 28px;
+    padding: 0 7px;
+    font-size: 10px;
   }
 }
 

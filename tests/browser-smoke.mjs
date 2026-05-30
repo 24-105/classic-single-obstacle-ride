@@ -136,6 +136,8 @@ try {
       skillLabel: document.querySelector("#finalSkillValue")?.previousElementSibling?.textContent.trim(),
       rankExists: Boolean(document.querySelector("#finalRankValue")),
       skillExists: Boolean(document.querySelector("#finalSkillValue")),
+      overlayPointerEvents: getComputedStyle(document.querySelector("#gameOverOverlay")).pointerEvents,
+      cardPointerEvents: getComputedStyle(document.querySelector(".game-over-card")).pointerEvents,
       commandDisabled: Array.from(document.querySelectorAll(".command-button")).every((button) => button.disabled)
     })`,
   );
@@ -147,6 +149,8 @@ try {
   assert.equal(labels.skillLabel, "神回避/跳び越え");
   assert.equal(labels.rankExists, true);
   assert.equal(labels.skillExists, true);
+  assert.equal(labels.overlayPointerEvents, "none");
+  assert.equal(labels.cardPointerEvents, "none");
   assert.equal(labels.commandDisabled, true);
 
   const startRect = await evaluate(
@@ -193,6 +197,7 @@ try {
       const best = document.querySelector("#finalBestScoreValue");
       const thanks = document.querySelector(".game-over-thanks");
       const recommend = document.querySelector(".recommend-panel");
+      const recommendCards = [...document.querySelectorAll(".recommend-card[href]")];
       overlay.classList.add("is-visible");
       overlay.setAttribute("aria-hidden", "false");
       strip.hidden = false;
@@ -220,6 +225,10 @@ try {
         thanksFits: thanks.scrollWidth <= thanks.clientWidth,
         recommendInside: recommend.getBoundingClientRect().left >= card.left &&
           recommend.getBoundingClientRect().right <= card.right,
+        recommendCardCount: recommendCards.length,
+        recommendListDisplay: getComputedStyle(document.querySelector(".recommend-list")).display,
+        overlayPointerEvents: getComputedStyle(overlay).pointerEvents,
+        recommendHrefs: recommendCards.map((link) => link.href),
         recommendText: recommend.textContent,
         statusText
       };
@@ -235,8 +244,15 @@ try {
   assert.equal(resultLayout.cardClearOfCommands, true);
   assert.equal(resultLayout.thanksFits, true);
   assert.equal(resultLayout.recommendInside, true);
-  assert.match(resultLayout.recommendText, /おすすめ/);
-  assert.match(resultLayout.recommendText, /Coming soon/);
+  assert.equal(resultLayout.recommendCardCount, 3);
+  assert.notEqual(resultLayout.recommendListDisplay, "none");
+  assert.equal(resultLayout.overlayPointerEvents, "auto");
+  assert.match(resultLayout.recommendHrefs.join("\n"), /https:\/\/24-105\.github\.io\/machi-narabe\//);
+  assert.match(resultLayout.recommendHrefs.join("\n"), /https:\/\/24-105\.github\.io\/kameposu\//);
+  assert.match(resultLayout.recommendHrefs.join("\n"), /https:\/\/24-105\.github\.io\/hitoyo-saishucho\//);
+  assert.match(resultLayout.recommendText, /次に遊ぶ/);
+  assert.match(resultLayout.recommendText, /遊ぶ/);
+  assert.doesNotMatch(resultLayout.recommendText, /Coming soon/);
   assert.equal(resultLayout.statusText, "");
 
   if (process.env.RIDE_RESULT_SCREENSHOT_PATH) {
@@ -280,13 +296,19 @@ try {
     "Ⅱ 一時停止",
   );
 
-  await clickSelector(client, "#startButton");
+  await dispatchPointerDown(client, "#startButton");
   const paused = await waitForDiagnostics(
     client,
     (state) => state?.state?.running === false && state?.state?.over === false,
   );
   assert.equal(paused.state.running, false);
   assert.equal(await areCommandsDisabled(client), true);
+  assert.equal(
+    await evaluate(client, `document.querySelector("#startButton").textContent.trim()`),
+    "▶ 再開",
+  );
+  await clickSelector(client, "#resetButton");
+  await delay(150);
   assert.equal(
     await evaluate(client, `document.querySelector("#startButton").textContent.trim()`),
     "▶ 再開",

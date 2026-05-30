@@ -25,6 +25,7 @@ const finalScoreValue = document.querySelector("#finalScoreValue");
 const finalBestScoreValue = document.querySelector("#finalBestScoreValue");
 const finalComboValue = document.querySelector("#finalComboValue");
 const finalSkillValue = document.querySelector("#finalSkillValue");
+const recommendCards = [...document.querySelectorAll(".recommend-card[href]")];
 
 const lanes = [1.35, 0, -1.35];
 const game = {
@@ -117,6 +118,7 @@ const JUMP_LANDING_RECOVERY = 0.27;
 const JUMP_CHAIN_RECOVERY = 0.76;
 const JUMP_INPUT_BUFFER = 0.16;
 const MAX_JUMP_CHAIN = 5;
+const BLANK_FAVICON_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 
 const segmentConfigs = {
   city: {
@@ -241,6 +243,7 @@ let hudRefreshTimer = 0;
 let suppressNextSyntheticClick = false;
 let suppressedClickElement = null;
 let syntheticClickTimer = 0;
+let recommendCardsLoaded = false;
 const wheelMeshes = [];
 const roadMarkers = [];
 const roadsideObjects = [];
@@ -313,7 +316,7 @@ function bindPress(element, handler) {
     if (element.disabled) {
       return;
     }
-    if (suppressNextSyntheticClick && suppressedClickElement === element) {
+    if (suppressNextSyntheticClick) {
       suppressNextSyntheticClick = false;
       suppressedClickElement = null;
       window.clearTimeout(syntheticClickTimer);
@@ -343,6 +346,250 @@ function saveSessionHighScore(score) {
   } catch {
     // Storage can be unavailable in strict private browsing modes.
   }
+}
+
+function loadRecommendCards() {
+  if (recommendCardsLoaded) {
+    return;
+  }
+  recommendCardsLoaded = true;
+
+  const cardGroups = new Map();
+  recommendCards.forEach((card) => {
+    const image = card.querySelector(".recommend-favicon");
+    if (image) clearRecommendFavicon(image);
+
+    const pageUrl = card.href;
+    if (!pageUrl) return;
+    const group = cardGroups.get(pageUrl) ?? [];
+    group.push(card);
+    cardGroups.set(pageUrl, group);
+  });
+
+  cardGroups.forEach((cards, pageUrl) => {
+    resolveRecommendPageMeta(pageUrl).then((meta) => {
+      cards.forEach((card) => applyRecommendPageMeta(card, meta));
+    });
+  });
+}
+
+async function resolveRecommendPageMeta(pageUrl) {
+  try {
+    const response = await fetchWithTimeout(pageUrl, { cache: "no-cache" }, 4500);
+    if (!response.ok) return null;
+
+    const html = await response.text();
+    const page = new DOMParser().parseFromString(html, "text/html");
+    const baseUrl = response.url || pageUrl;
+    return {
+      iconUrl: resolveRecommendIconUrl(page, baseUrl),
+      title: extractRecommendTitle(page),
+      description: extractRecommendDescription(page),
+      genre: extractRecommendGenre(page),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function resolveRecommendIconUrl(page, baseUrl) {
+  try {
+    const iconLink = findPreferredFaviconLink(page);
+    const href = iconLink?.getAttribute("href")?.trim();
+    if (!href) return "";
+    if (href.startsWith("data:")) return href;
+
+    const iconUrl = new URL(href, baseUrl);
+    iconUrl.searchParams.set("favicon_refresh", String(Date.now()));
+    return iconUrl.href;
+  } catch {
+    return "";
+  }
+}
+
+function extractRecommendTitle(page) {
+  const jsonLd = getJsonLdObjects(page);
+  return (
+    findJsonLdText(jsonLd, ["name"])
+    || getMetaContent(page, [
+      "meta[name='application-name']",
+      "meta[name='apple-mobile-web-app-title']",
+      "meta[property='og:site_name']",
+    ])
+    || stripRecommendTitle(getMetaContent(page, [
+      "meta[property='og:title']",
+      "meta[name='twitter:title']",
+    ]) || page.querySelector("title")?.textContent)
+  );
+}
+
+function extractRecommendDescription(page) {
+  const jsonLd = getJsonLdObjects(page);
+  return pickBriefRecommendText([
+    getMetaContent(page, ["meta[property='og:description']"]),
+    getMetaContent(page, ["meta[name='twitter:description']"]),
+    getMetaContent(page, ["meta[name='description']"]),
+    findJsonLdText(jsonLd, ["description"]),
+  ], 46);
+}
+
+function extractRecommendGenre(page) {
+  const jsonLd = getJsonLdObjects(page);
+  for (const item of jsonLd) {
+    const [genre] = toRecommendTextList(item.genre);
+    if (genre) return genre;
+  }
+  return "";
+}
+
+function applyRecommendPageMeta(card, meta) {
+  const image = card.querySelector(".recommend-favicon");
+  if (image) setRecommendFavicon(image, meta?.iconUrl || "");
+
+  const title = trimRecommendText(meta?.title, 22);
+  const description = trimRecommendText(meta?.description, 46);
+  const genre = trimRecommendText(meta?.genre, 14);
+
+  card.querySelector("em").textContent = genre;
+  card.querySelector("strong").textContent = title;
+  card.querySelector("small").textContent = description;
+  card.classList.toggle("is-empty-meta", !title && !description && !genre);
+  card.setAttribute("aria-label", title ? `おすすめゲーム: ${title}` : "おすすめゲーム");
+}
+
+function getMetaContent(page, selectors) {
+  for (const selector of selectors) {
+    const value = page.querySelector(selector)?.getAttribute("content")?.trim();
+    if (value) return value;
+  }
+  return "";
+}
+
+function getJsonLdObjects(page) {
+  const objects = [];
+  page.querySelectorAll("script[type='application/ld+json']").forEach((script) => {
+    try {
+      collectJsonLdObjects(JSON.parse(script.textContent || ""), objects);
+    } catch {
+      // Broken metadata should not break the game.
+    }
+  });
+  return objects;
+}
+
+function collectJsonLdObjects(value, objects) {
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectJsonLdObjects(item, objects));
+    return;
+  }
+
+  if (!value || typeof value !== "object") return;
+  objects.push(value);
+  if (Array.isArray(value["@graph"])) {
+    value["@graph"].forEach((item) => collectJsonLdObjects(item, objects));
+  }
+}
+
+function findJsonLdText(objects, keys) {
+  for (const object of objects) {
+    for (const key of keys) {
+      const [value] = toRecommendTextList(object[key]);
+      if (value) return value;
+    }
+  }
+  return "";
+}
+
+function toRecommendTextList(value) {
+  if (Array.isArray(value)) return value.flatMap((item) => toRecommendTextList(item));
+  if (typeof value === "string" || typeof value === "number") {
+    const text = normalizeRecommendText(String(value));
+    return text ? [text] : [];
+  }
+  if (value && typeof value === "object") {
+    return toRecommendTextList(value.name);
+  }
+  return [];
+}
+
+function stripRecommendTitle(text) {
+  const normalized = normalizeRecommendText(text);
+  if (!normalized) return "";
+  const parts = normalized.split(/\s*[|｜\-–—]\s*/).filter(Boolean);
+  return parts[0] || normalized;
+}
+
+function pickBriefRecommendText(values, maxLength) {
+  const normalizedValues = values
+    .map((value) => normalizeRecommendText(value))
+    .filter(Boolean);
+  return trimRecommendText(
+    normalizedValues.find((value) => value.length <= maxLength)
+      || normalizedValues[0]
+      || "",
+    maxLength,
+  );
+}
+
+function normalizeRecommendText(text) {
+  return String(text || "").replace(/\s+/g, " ").trim();
+}
+
+function trimRecommendText(text, maxLength) {
+  const normalized = normalizeRecommendText(text);
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxLength - 1))}…`;
+}
+
+function findPreferredFaviconLink(page) {
+  const links = [...page.querySelectorAll("link[rel][href]")].filter((link) => {
+    const tokens = link.relList ? [...link.relList] : link.rel.toLowerCase().split(/\s+/);
+    return tokens.includes("icon") || tokens.includes("apple-touch-icon");
+  });
+
+  return (
+    links.find((link) => link.type === "image/svg+xml")
+    ?? links.find((link) => {
+      const tokens = link.relList ? [...link.relList] : link.rel.toLowerCase().split(/\s+/);
+      return tokens.includes("icon");
+    })
+    ?? links[0]
+  );
+}
+
+async function fetchWithTimeout(url, options, timeoutMs) {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+function setRecommendFavicon(image, iconUrl) {
+  if (!iconUrl) {
+    clearRecommendFavicon(image);
+    return;
+  }
+
+  image.classList.add("is-empty");
+  image.onload = () => {
+    image.classList.remove("is-empty");
+    image.closest(".recommend-card-art")?.classList.remove("is-empty");
+  };
+  image.onerror = () => {
+    clearRecommendFavicon(image);
+  };
+  image.src = iconUrl;
+}
+
+function clearRecommendFavicon(image) {
+  image.onload = null;
+  image.onerror = null;
+  image.classList.add("is-empty");
+  image.src = BLANK_FAVICON_SRC;
+  image.closest(".recommend-card-art")?.classList.add("is-empty");
 }
 
 function setStatusMessage(text, seconds = 0.9) {
@@ -2695,6 +2942,7 @@ function showGameOver() {
   gameStatus.textContent = "";
   game.statusText = "";
   game.statusTimer = 0;
+  loadRecommendCards();
   gameOverOverlay.setAttribute("aria-hidden", "false");
   gameOverOverlay.classList.add("is-visible");
 }

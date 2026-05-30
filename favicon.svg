@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="自転車ダッシュ">
+  <rect width="64" height="64" rx="14" fill="#157f87"/>
+  <path d="M12 46h40" fill="none" stroke="#0f6268" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="19" cy="43" r="8" fill="none" stroke="#ffffff" stroke-width="4"/>
+  <circle cx="47" cy="43" r="8" fill="none" stroke="#ffffff" stroke-width="4"/>
+  <path d="M18 42h13l7-13h8l4 13M28 41l7-11" fill="none" stroke="#f0bf39" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M27 30h17" fill="none" stroke="#142032" stroke-width="6" stroke-linecap="round"/>
+  <path d="M22 16h20" fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round"/>
+  <path d="M43 13l7 6-7 6" fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
