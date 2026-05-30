@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://24-105.github.io/classic-single-obstacle-ride/sitemap.xml

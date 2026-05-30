@@ -16,10 +16,15 @@ const lifeValue = document.querySelector("#lifeValue");
 const comboValue = document.querySelector("#comboValue");
 const highScoreValue = document.querySelector("#highScoreValue");
 const goalText = document.querySelector("#goalText");
+const segmentStrip = document.querySelector("#segmentStrip");
+const segmentText = document.querySelector("#segmentText");
 const gameStatus = document.querySelector("#gameStatus");
 const gameOverOverlay = document.querySelector("#gameOverOverlay");
+const finalRankValue = document.querySelector("#finalRankValue");
 const finalScoreValue = document.querySelector("#finalScoreValue");
 const finalBestScoreValue = document.querySelector("#finalBestScoreValue");
+const finalComboValue = document.querySelector("#finalComboValue");
+const finalSkillValue = document.querySelector("#finalSkillValue");
 
 const lanes = [1.35, 0, -1.35];
 const game = {
@@ -41,13 +46,21 @@ const game = {
   nearMisses: 0,
   jumpDodges: 0,
   perfects: 0,
+  totalNearMisses: 0,
+  totalJumpDodges: 0,
+  totalPerfects: 0,
+  godDodges: 0,
   perfectChain: 0,
+  bestPerfectChain: 0,
   riskScore: 0,
   riskLane: null,
   riskTimer: 0,
   riskCooldown: 1.5,
   missionStartLevel: 1,
   rushMissionTime: 0,
+  segmentType: "city",
+  segmentTimer: 0,
+  segmentCooldown: 6,
   eventType: "",
   eventTimer: 0,
   eventCooldown: 5.5,
@@ -63,13 +76,15 @@ const game = {
   jumpHeight: 0,
   jumpVelocity: 0,
   jumpCooldown: 0,
+  jumpBufferTimer: 0,
   jumpChain: 0,
   groundTimer: 1,
   lean: 0,
 };
+const GAME_VERSION = "v3";
 const MOBILE_RENDER_SCALE = 1;
 const HUD_REFRESH_INTERVAL = 0.12;
-const DIAGNOSTICS_FRAME_INTERVAL = 120;
+const DIAGNOSTICS_FRAME_INTERVAL = 30;
 const ROAD_MARKER_ROWS = 14;
 const ROADSIDE_POST_ROWS = 12;
 const BUILDING_COUNT = 8;
@@ -86,19 +101,97 @@ const BACK_DESPAWN_Z = -12;
 const PASS_Z = -1.28;
 const HIT_ZONE_FRONT_Z = 0.28;
 const HIT_ZONE_BACK_Z = -0.45;
-const PERFECT_NEAR_MARGIN = 0.15;
-const PERFECT_JUMP_WINDOW = 0.2;
+const GOD_DODGE_MARGIN = 0.075;
+const PERFECT_NEAR_MARGIN = 0.16;
+const PERFECT_JUMP_WINDOW = 0.26;
 const PERFECT_DUCK_HEIGHT = 0.12;
 const RISK_ROUTE_DURATION = 8.2;
 const RISK_ROUTE_SCORE_MULTIPLIER = 1.45;
 const RANDOM_EVENT_MIN_DURATION = 7;
 const RANDOM_EVENT_MAX_DURATION = 11;
-const JUMP_GRAVITY = 10.6;
-const JUMP_BASE_VELOCITY = 4.42;
-const JUMP_MIN_VELOCITY = 3.18;
-const JUMP_LANDING_RECOVERY = 0.32;
-const JUMP_CHAIN_RECOVERY = 0.82;
+const JUMP_GRAVITY = 9.7;
+const JUMP_BASE_VELOCITY = 4.95;
+const JUMP_MIN_VELOCITY = 3.72;
+const JUMP_CLEARANCE_ASSIST = 0.13;
+const JUMP_LANDING_RECOVERY = 0.27;
+const JUMP_CHAIN_RECOVERY = 0.76;
+const JUMP_INPUT_BUFFER = 0.16;
 const MAX_JUMP_CHAIN = 5;
+
+const segmentConfigs = {
+  city: {
+    label: "市街地",
+    shortLabel: "市街地",
+    background: "#dce6e8",
+    grass: "#becac1",
+    road: "#2f353b",
+    lane: "#f1ead8",
+    shoulder: "#737b82",
+    score: 1,
+    spawn: 1,
+    effect: "",
+  },
+  construction: {
+    label: "工事区間",
+    shortLabel: "工事",
+    background: "#e1dfd3",
+    grass: "#c8c3ad",
+    road: "#34302b",
+    lane: "#ffd05a",
+    shoulder: "#9a8758",
+    score: 1.12,
+    spawn: 0.92,
+    effect: "+12%",
+  },
+  bridge: {
+    label: "橋",
+    shortLabel: "橋",
+    background: "#cfe7ed",
+    grass: "#8ebbc4",
+    road: "#303941",
+    lane: "#f4f0dc",
+    shoulder: "#8798a0",
+    score: 1.16,
+    spawn: 0.95,
+    effect: "+16%",
+  },
+  jump: {
+    label: "ジャンプ区間",
+    shortLabel: "ジャンプ",
+    background: "#d9eadf",
+    grass: "#b3cdb4",
+    road: "#31383a",
+    lane: "#dff7ff",
+    shoulder: "#5fa68d",
+    score: 1.18,
+    spawn: 0.9,
+    effect: "+18%",
+  },
+  tunnel: {
+    label: "トンネル",
+    shortLabel: "トンネル",
+    background: "#202932",
+    grass: "#333d42",
+    road: "#252a30",
+    lane: "#e7dca6",
+    shoulder: "#56606a",
+    score: 1.22,
+    spawn: 0.93,
+    effect: "+22%",
+  },
+  night: {
+    label: "夜道",
+    shortLabel: "夜道",
+    background: "#172735",
+    grass: "#273b40",
+    road: "#222a31",
+    lane: "#d9edf0",
+    shoulder: "#46545f",
+    score: 1.28,
+    spawn: 0.9,
+    effect: "+28%",
+  },
+};
 
 const missions = [
   { label: "コインを4個集める", type: "coins", target: 4, reward: 1100 },
@@ -106,7 +199,7 @@ const missions = [
   { label: "パーフェクトを3回決める", type: "perfects", target: 3, reward: 2100 },
   { label: "ジャンプ回避を5回決める", type: "jumpDodges", target: 5, reward: 1700 },
   { label: "コンボ×10到達", type: "combo", target: 10, reward: 2000 },
-  { label: "危険ルートで900点稼ぐ", type: "riskScore", target: 900, reward: 2500 },
+  { label: "危険レーンで900点稼ぐ", type: "riskScore", target: 900, reward: 2500 },
   { label: "レベルを100上げる", type: "levelGain", target: 100, reward: 2600 },
   { label: "ラッシュ中に3秒走る", type: "rush", target: 3, reward: 2800 },
 ];
@@ -144,9 +237,9 @@ controls.target.set(0, 1.3, 2.45);
 const clock = new THREE.Clock();
 const diagnostics = { node: null, frame: 0 };
 const cameraTarget = new THREE.Vector3();
-const defaultSceneColor = new THREE.Color("#dce6e8");
 let hudRefreshTimer = 0;
 let suppressNextSyntheticClick = false;
+let suppressedClickElement = null;
 let syntheticClickTimer = 0;
 const wheelMeshes = [];
 const roadMarkers = [];
@@ -198,10 +291,15 @@ function initialize() {
 function bindPress(element, handler) {
   const run = (event) => {
     event.preventDefault();
+    if (element.disabled) {
+      return;
+    }
     suppressNextSyntheticClick = true;
+    suppressedClickElement = element;
     window.clearTimeout(syntheticClickTimer);
     syntheticClickTimer = window.setTimeout(() => {
       suppressNextSyntheticClick = false;
+      suppressedClickElement = null;
     }, 700);
     handler();
   };
@@ -212,8 +310,12 @@ function bindPress(element, handler) {
   );
   element.addEventListener("click", (event) => {
     event.preventDefault();
-    if (suppressNextSyntheticClick) {
+    if (element.disabled) {
+      return;
+    }
+    if (suppressNextSyntheticClick && suppressedClickElement === element) {
       suppressNextSyntheticClick = false;
+      suppressedClickElement = null;
       window.clearTimeout(syntheticClickTimer);
       return;
     }
@@ -250,16 +352,25 @@ function setStatusMessage(text, seconds = 0.9) {
 
 function setStartButtonState() {
   if (game.over) {
-    startButton.textContent = "▶ リトライ";
+    startButton.textContent = "▶ もう一度";
   } else if (game.running) {
-    startButton.textContent = "Ⅱ ポーズ";
+    startButton.textContent = "Ⅱ 一時停止";
   } else {
-    startButton.textContent = game.started ? "▶ ポーズ解除" : "▶ スタート";
+    startButton.textContent = game.started ? "▶ 再開" : "▶ 開始";
   }
   startButton.classList.toggle("is-running", game.running);
-  resetButton.textContent = "↻ リトライ";
-  resetButton.setAttribute("aria-label", "リトライ");
+  resetButton.textContent = "↻ もう一度";
+  resetButton.setAttribute("aria-label", "もう一度");
   resetButton.hidden = !game.started || game.running || game.over;
+  setCommandButtonsState();
+}
+
+function setCommandButtonsState() {
+  const disabled = !game.running || game.over;
+  [leftButton, rightButton, jumpButton].forEach((button) => {
+    button.disabled = disabled;
+    button.setAttribute("aria-disabled", String(disabled));
+  });
 }
 
 function formatNumber(value) {
@@ -892,6 +1003,9 @@ function getObstacleProfile(type) {
     bollard: { width: 0.28, jumpClear: 999, collision: "ground", scoreJump: false },
     crate: { width: 0.46, jumpClear: 999, collision: "ground", scoreJump: false },
     pothole: { width: 0.5, jumpClear: 0.26, collision: "ground", scoreJump: true },
+    jumpRail: { width: 0.56, jumpClear: 0.46, collision: "ground", scoreJump: true },
+    roadCut: { width: 0.62, jumpClear: 0.34, collision: "ground", scoreJump: true },
+    sign: { width: 0.34, jumpClear: 999, collision: "ground", scoreJump: false },
     spikes: { width: 0.52, jumpClear: 0.36, collision: "ground", scoreJump: true },
     oil: { width: 0.58, jumpClear: 0.2, collision: "slip", scoreJump: false },
     overhead: {
@@ -989,6 +1103,60 @@ function createObstacle(type) {
     rim.scale.z = 0.68;
     rim.rotation.x = Math.PI * 0.5;
     group.add(hole, rim);
+  } else if (type === "jumpRail") {
+    const rail = new THREE.Mesh(
+      new RoundedBoxGeometry(1.04, 0.16, 0.18, 5, 0.035),
+      materials.warning,
+    );
+    rail.position.y = 0.36;
+    const stripeA = new THREE.Mesh(
+      new RoundedBoxGeometry(0.14, 0.19, 0.19, 2, 0.012),
+      materials.coneBand,
+    );
+    stripeA.position.set(-0.26, 0.36, -0.01);
+    stripeA.rotation.z = -0.55;
+    const stripeB = stripeA.clone();
+    stripeB.position.x = 0.26;
+    const footA = new THREE.Mesh(
+      new RoundedBoxGeometry(0.12, 0.36, 0.12, 2, 0.015),
+      materials.barrier,
+    );
+    footA.position.set(-0.43, 0.18, 0);
+    const footB = footA.clone();
+    footB.position.x = 0.43;
+    group.add(rail, stripeA, stripeB, footA, footB);
+  } else if (type === "roadCut") {
+    const gap = new THREE.Mesh(
+      new RoundedBoxGeometry(1.15, 0.04, 0.88, 6, 0.07),
+      materials.oil,
+    );
+    gap.position.y = 0.026;
+    const nearEdge = new THREE.Mesh(
+      new RoundedBoxGeometry(1.18, 0.06, 0.07, 3, 0.012),
+      materials.warning,
+    );
+    nearEdge.position.set(0, 0.06, -0.43);
+    const farEdge = nearEdge.clone();
+    farEdge.position.z = 0.43;
+    group.add(gap, nearEdge, farEdge);
+  } else if (type === "sign") {
+    const stand = new THREE.Mesh(
+      new RoundedBoxGeometry(0.08, 0.74, 0.08, 2, 0.015),
+      materials.barrier,
+    );
+    stand.position.y = 0.37;
+    const board = new THREE.Mesh(
+      new RoundedBoxGeometry(0.54, 0.38, 0.08, 4, 0.025),
+      materials.warning,
+    );
+    board.position.y = 0.76;
+    const slash = new THREE.Mesh(
+      new RoundedBoxGeometry(0.46, 0.055, 0.09, 2, 0.01),
+      materials.coneBand,
+    );
+    slash.position.y = 0.76;
+    slash.rotation.z = -0.52;
+    group.add(stand, board, slash);
   } else if (type === "barrier") {
     const beam = new THREE.Mesh(
       new RoundedBoxGeometry(1.1, 0.36, 0.18, 5, 0.035),
@@ -1166,82 +1334,118 @@ function spawnObstacle() {
   }
 
   if (
-    difficulty.level >= 640 &&
-    Math.random() < 0.09 + difficulty.nightmare * 0.24
+    game.segmentType === "jump" &&
+    difficulty.level >= 24 &&
+    Math.random() < 0.22 + difficulty.factor * 0.12
+  ) {
+    spawnJumpChicane(difficulty);
+    return;
+  }
+
+  if (
+    game.segmentType === "construction" &&
+    difficulty.level >= 52 &&
+    Math.random() < 0.2 + difficulty.chaos * 0.12
+  ) {
+    spawnConstructionSqueeze(difficulty);
+    return;
+  }
+
+  if (
+    game.segmentType === "bridge" &&
+    difficulty.level >= 130 &&
+    Math.random() < 0.18 + difficulty.chaos * 0.12
+  ) {
+    spawnBridgeThread(difficulty);
+    return;
+  }
+
+  if (
+    (game.segmentType === "tunnel" || game.segmentType === "night") &&
+    difficulty.level >= 300 &&
+    Math.random() < 0.16 + difficulty.chaos * 0.12
+  ) {
+    spawnSplitDecision(difficulty);
+    return;
+  }
+
+  if (
+    difficulty.level >= 920 &&
+    Math.random() < 0.08 + difficulty.nightmare * 0.24
   ) {
     spawnBaitJumpTrap(difficulty);
     return;
   }
 
   if (
-    difficulty.level >= 520 &&
-    Math.random() < 0.1 + difficulty.chaos * 0.18
+    difficulty.level >= 760 &&
+    Math.random() < 0.09 + difficulty.chaos * 0.18
   ) {
     spawnSweepTrap(difficulty);
     return;
   }
 
   if (
-    difficulty.level >= 420 &&
-    Math.random() < 0.08 + difficulty.nightmare * 0.14
+    difficulty.level >= 620 &&
+    Math.random() < 0.07 + difficulty.nightmare * 0.14
   ) {
     spawnOverUnderMix(difficulty);
     return;
   }
 
   if (
-    difficulty.level >= 300 &&
-    Math.random() < 0.09 + difficulty.chaos * 0.16
+    difficulty.level >= 460 &&
+    Math.random() < 0.08 + difficulty.chaos * 0.16
   ) {
     spawnPinchGate(difficulty);
     return;
   }
 
   if (
-    difficulty.level >= 180 &&
-    Math.random() < 0.1 + difficulty.chaos * 0.18
+    difficulty.level >= 300 &&
+    Math.random() < 0.08 + difficulty.chaos * 0.16
   ) {
     spawnRhythmRun(difficulty);
     return;
   }
 
   if (
-    difficulty.level >= 140 &&
-    Math.random() < 0.12 + difficulty.chaos * 0.22
+    difficulty.level >= 220 &&
+    Math.random() < 0.1 + difficulty.chaos * 0.18
   ) {
     spawnAirGate(difficulty);
     return;
   }
 
-  if (difficulty.level >= 90 && Math.random() < 0.14 + difficulty.chaos * 0.24) {
+  if (difficulty.level >= 145 && Math.random() < 0.11 + difficulty.chaos * 0.2) {
     spawnSlalom(difficulty);
     return;
   }
 
   if (
-    difficulty.level >= 58 &&
-    Math.random() < 0.11 + difficulty.factor * 0.16
+    difficulty.level >= 96 &&
+    Math.random() < 0.1 + difficulty.factor * 0.13
   ) {
     spawnFunnelSwitch(difficulty);
     return;
   }
 
-  if (difficulty.level >= 34 && Math.random() < 0.18 + difficulty.factor * 0.22) {
+  if (difficulty.level >= 60 && Math.random() < 0.14 + difficulty.factor * 0.18) {
     spawnStaggeredRows(difficulty);
     return;
   }
 
   if (
-    difficulty.level >= 18 &&
-    Math.random() < 0.12 + difficulty.factor * 0.12
+    difficulty.level >= 28 &&
+    Math.random() < 0.1 + difficulty.factor * 0.1
   ) {
     spawnOffsetPair(difficulty);
     return;
   }
 
   if (
-    difficulty.level >= 10 &&
-    Math.random() < 0.16 + difficulty.factor * 0.24
+    difficulty.level >= 16 &&
+    Math.random() < 0.12 + difficulty.factor * 0.18
   ) {
     spawnBlockedRow(difficulty, FRONT_SPAWN_Z);
     return;
@@ -1434,6 +1638,94 @@ function spawnBaitJumpTrap(difficulty) {
   }
 }
 
+function spawnJumpChicane(difficulty) {
+  const firstLane = Math.floor(Math.random() * lanes.length);
+  const spacing = THREE.MathUtils.lerp(8.8, 6.1, difficulty.pressure);
+  addObstacle(Math.random() < 0.55 ? "jumpRail" : "roadCut", firstLane, FRONT_SPAWN_Z);
+  if (obstacles.length < getMaxObstacleCount(difficulty)) {
+    const nextLane = (firstLane + (Math.random() < 0.5 ? 1 : 2)) % lanes.length;
+    addObstacle(
+      Math.random() < 0.55 ? "pothole" : "spikes",
+      nextLane,
+      FRONT_SPAWN_Z + spacing,
+    );
+  }
+  if (
+    difficulty.level >= 140 &&
+    obstacles.length < getMaxObstacleCount(difficulty)
+  ) {
+    addObstacle(
+      "jumpRail",
+      firstLane,
+      FRONT_SPAWN_Z + spacing * 2,
+    );
+  }
+}
+
+function spawnConstructionSqueeze(difficulty) {
+  const gapLane = Math.floor(Math.random() * lanes.length);
+  lanes.forEach((_, lane) => {
+    if (obstacles.length >= getMaxObstacleCount(difficulty)) {
+      return;
+    }
+    if (lane === gapLane) {
+      addObstacle(Math.random() < 0.45 ? "jumpRail" : "roadCut", lane, FRONT_SPAWN_Z);
+    } else {
+      addObstacle(Math.random() < 0.55 ? "sign" : "barrier", lane, FRONT_SPAWN_Z);
+    }
+  });
+  if (
+    difficulty.level >= 95 &&
+    obstacles.length < getMaxObstacleCount(difficulty)
+  ) {
+    const nextGap = (gapLane + (Math.random() < 0.5 ? 1 : 2)) % lanes.length;
+    spawnBlockedRowWithGap(
+      difficulty,
+      nextGap,
+      FRONT_SPAWN_Z + THREE.MathUtils.lerp(9.6, 6.9, difficulty.pressure),
+    );
+  }
+}
+
+function spawnBridgeThread(difficulty) {
+  const jumpLane = Math.floor(Math.random() * lanes.length);
+  const safeLane = (jumpLane + (Math.random() < 0.5 ? 1 : 2)) % lanes.length;
+  lanes.forEach((_, lane) => {
+    if (obstacles.length >= getMaxObstacleCount(difficulty)) {
+      return;
+    }
+    if (lane === safeLane) {
+      return;
+    }
+    addObstacle(lane === jumpLane ? "roadCut" : "barrier", lane, FRONT_SPAWN_Z);
+  });
+  if (obstacles.length < getMaxObstacleCount(difficulty)) {
+    spawnBlockedRowWithGap(
+      difficulty,
+      jumpLane,
+      FRONT_SPAWN_Z + THREE.MathUtils.lerp(9.8, 7.0, difficulty.pressure),
+    );
+  }
+}
+
+function spawnSplitDecision(difficulty) {
+  const lanesByRole = [0, 1, 2].sort(() => Math.random() - 0.5);
+  addObstacle("overhead", lanesByRole[0], FRONT_SPAWN_Z);
+  if (obstacles.length < getMaxObstacleCount(difficulty)) {
+    addObstacle("jumpRail", lanesByRole[1], FRONT_SPAWN_Z);
+  }
+  if (
+    difficulty.level >= 340 &&
+    obstacles.length < getMaxObstacleCount(difficulty)
+  ) {
+    addObstacle(
+      Math.random() < 0.5 ? "roadCut" : "spikes",
+      lanesByRole[2],
+      FRONT_SPAWN_Z + THREE.MathUtils.lerp(7.0, 5.3, difficulty.chaos),
+    );
+  }
+}
+
 function addObstacle(type, lane, z) {
   const obstacle = createObstacle(type);
   obstacle.position.set(lanes[lane], 0, z);
@@ -1507,45 +1799,51 @@ function chooseObstacleType(roll, difficulty) {
   }
   if (difficulty.level < 36) {
     return pickWeightedObstacle(roll, [
-      [0.34, "cone"],
-      [0.58, "bollard"],
-      [0.78, "drum"],
-      [0.92, "barrier"],
-      [1, "pothole"],
+      [0.3, "cone"],
+      [0.52, "bollard"],
+      [0.7, "drum"],
+      [0.84, "barrier"],
+      [0.94, "pothole"],
+      [1, "jumpRail"],
     ]);
   }
   if (difficulty.level < 110) {
     return pickWeightedObstacle(roll, [
-      [0.22, "cone"],
-      [0.4, "bollard"],
-      [0.58, "drum"],
-      [0.72, "barrier"],
-      [0.84, "spikes"],
-      [0.94, "pothole"],
+      [0.18, "cone"],
+      [0.34, "bollard"],
+      [0.5, "drum"],
+      [0.64, "barrier"],
+      [0.75, "spikes"],
+      [0.85, "pothole"],
+      [0.94, "jumpRail"],
       [1, "oil"],
     ]);
   }
   if (difficulty.level < 520) {
     return pickWeightedObstacle(roll, [
-      [0.16, "cone"],
-      [0.3, "bollard"],
-      [0.44, "drum"],
-      [0.58, "barrier"],
-      [0.72, "crate"],
-      [0.84, "spikes"],
-      [0.93, "pothole"],
+      [0.13, "cone"],
+      [0.25, "bollard"],
+      [0.37, "drum"],
+      [0.5, "barrier"],
+      [0.61, "crate"],
+      [0.72, "spikes"],
+      [0.81, "pothole"],
+      [0.9, "jumpRail"],
+      [0.96, "roadCut"],
       [1, "oil"],
     ]);
   }
   return pickWeightedObstacle(roll, [
-    [0.12, "cone"],
-    [0.24, "bollard"],
-    [0.36, "drum"],
-    [0.5, "barrier"],
-    [0.62, "crate"],
-    [0.74, "spikes"],
-    [0.86, "pothole"],
-    [0.94, "oil"],
+    [0.1, "cone"],
+    [0.2, "bollard"],
+    [0.3, "drum"],
+    [0.43, "barrier"],
+    [0.54, "crate"],
+    [0.65, "spikes"],
+    [0.75, "pothole"],
+    [0.84, "jumpRail"],
+    [0.91, "roadCut"],
+    [0.96, "oil"],
     [1, "sweeper"],
   ]);
 }
@@ -1556,12 +1854,66 @@ function getDifficulty() {
     1,
     MAX_DIFFICULTY_LEVEL,
   );
-  const factor = Math.min(1, Math.log1p(level) / Math.log1p(760));
-  const pressure = Math.min(1, level / 420);
-  const chaos = Math.min(1, Math.max(0, level - 80) / 620);
-  const nightmare = Math.min(1, Math.max(0, level - 320) / 2200);
-  const absurd = Math.min(1, Math.max(0, level - 2200) / 7000);
+  const factor = Math.min(1, Math.log1p(level) / Math.log1p(2200));
+  const pressure = Math.min(1, Math.pow(level / 1800, 0.82));
+  const chaos = Math.min(1, Math.max(0, level - 220) / 1400);
+  const nightmare = Math.min(1, Math.max(0, level - 760) / 2600);
+  const absurd = Math.min(1, Math.max(0, level - 2600) / 7000);
   return { level, factor, pressure, chaos, nightmare, absurd };
+}
+
+function getSegmentConfig(type = game.segmentType) {
+  return segmentConfigs[type] || segmentConfigs.city;
+}
+
+function getSegmentScoreMultiplier() {
+  return getSegmentConfig().score;
+}
+
+function getSegmentSpawnMultiplier() {
+  return getSegmentConfig().spawn;
+}
+
+function chooseSegmentType(difficulty) {
+  const choices = ["construction", "jump"];
+  if (difficulty.level >= 70) choices.push("bridge");
+  if (difficulty.level >= 150) choices.push("tunnel");
+  if (difficulty.level >= 260) choices.push("night");
+  const filtered = choices.filter((type) => type !== game.segmentType);
+  return filtered[Math.floor(Math.random() * filtered.length)] || "construction";
+}
+
+function startSegment(difficulty) {
+  game.segmentType = chooseSegmentType(difficulty);
+  game.segmentTimer =
+    THREE.MathUtils.randFloat(12, 17) + difficulty.nightmare * 2.5;
+  game.spawnTimer = Math.min(game.spawnTimer, getSpawnDelay(difficulty) * 0.55);
+  setStatusMessage(`${getSegmentConfig().label}突入`, 1.25);
+  applyEventVisuals();
+}
+
+function updateSegment(delta, difficulty) {
+  if (!game.running || game.over) {
+    applyEventVisuals();
+    return;
+  }
+  if (game.segmentTimer > 0) {
+    game.segmentTimer = Math.max(0, game.segmentTimer - delta);
+    if (game.segmentTimer === 0) {
+      game.segmentType = "city";
+      game.segmentCooldown = THREE.MathUtils.randFloat(
+        8.5,
+        14 - difficulty.chaos * 2.4,
+      );
+      setStatusMessage("通常区間", 0.75);
+    }
+  } else {
+    game.segmentCooldown -= delta;
+    if (game.segmentCooldown <= 0) {
+      startSegment(difficulty);
+    }
+  }
+  applyEventVisuals();
 }
 
 function getTargetSpeed(difficulty) {
@@ -1576,14 +1928,15 @@ function getTargetSpeed(difficulty) {
 
 function getSpawnDelay(difficulty) {
   let center =
-    THREE.MathUtils.lerp(1.15, 0.28, difficulty.pressure) -
-    difficulty.nightmare * 0.025 -
-    difficulty.absurd * 0.02;
+    THREE.MathUtils.lerp(1.24, 0.3, difficulty.pressure) -
+    difficulty.nightmare * 0.02 -
+    difficulty.absurd * 0.025;
   if (game.eventType === "traffic") {
-    center *= 0.82;
+    center *= 0.86;
   }
-  const jitter = THREE.MathUtils.lerp(0.28, 0.055, difficulty.factor);
-  return THREE.MathUtils.randFloat(Math.max(0.17, center - jitter), center + jitter);
+  center *= getSegmentSpawnMultiplier();
+  const jitter = THREE.MathUtils.lerp(0.3, 0.055, difficulty.factor);
+  return THREE.MathUtils.randFloat(Math.max(0.19, center - jitter), center + jitter);
 }
 
 function getItemDelay(difficulty) {
@@ -1594,8 +1947,12 @@ function getItemDelay(difficulty) {
 
 function getMaxObstacleCount(difficulty) {
   const eventExtra = game.eventType === "traffic" ? 2 : 0;
+  const density = Math.max(
+    Math.pow(difficulty.pressure, 1.25),
+    difficulty.nightmare * 0.96,
+  );
   return Math.round(
-    THREE.MathUtils.lerp(4, MAX_OBSTACLES, Math.max(difficulty.pressure, difficulty.nightmare)),
+    THREE.MathUtils.lerp(3, MAX_OBSTACLES, density),
   ) + eventExtra;
 }
 
@@ -1654,10 +2011,13 @@ function awardScore(base, label = "") {
   const rushBonus = game.rushTimer > 0 ? 1.7 : 1;
   const riskBonus = isOnRiskRoute() ? RISK_ROUTE_SCORE_MULTIPLIER : 1;
   const eventBonus = getEventScoreMultiplier();
-  const amount = Math.round(base * game.combo * rushBonus * riskBonus * eventBonus);
+  const segmentBonus = getSegmentScoreMultiplier();
+  const amount = Math.round(
+    base * game.combo * rushBonus * riskBonus * eventBonus * segmentBonus,
+  );
   addScore(amount, riskBonus > 1);
   if (label) {
-    const prefix = riskBonus > 1 ? "危険 " : "";
+    const prefix = riskBonus > 1 ? "危険レーン " : "";
     setStatusMessage(`${prefix}${label} +${amount}`);
   }
   updateHighScore();
@@ -1718,30 +2078,37 @@ function getObstacleHitType(obstacle, lateral) {
   if (obstacle.userData.collision === "air") {
     return game.jumpHeight > obstacle.userData.airHitMin ? "hit" : "";
   }
+  const clearHeight =
+    game.jumpHeight + (obstacle.userData.scoreJump ? JUMP_CLEARANCE_ASSIST : 0);
   if (obstacle.userData.collision === "slip") {
-    return game.jumpHeight > obstacle.userData.jumpClear ? "" : "slip";
+    return clearHeight > obstacle.userData.jumpClear ? "" : "slip";
   }
-  return game.jumpHeight > obstacle.userData.jumpClear ? "" : "hit";
+  return clearHeight > obstacle.userData.jumpClear ? "" : "hit";
 }
 
 function getPassResult(obstacle, lateral) {
   const nearGap = lateral - obstacle.userData.width;
   const nearMiss = nearGap >= 0 && nearGap < 0.46;
+  const clearHeight =
+    game.jumpHeight + (obstacle.userData.scoreJump ? JUMP_CLEARANCE_ASSIST : 0);
   const jumpedObstacle =
     obstacle.userData.scoreJump &&
     lateral < obstacle.userData.width &&
-    game.jumpHeight > obstacle.userData.jumpClear;
+    clearHeight > obstacle.userData.jumpClear;
   const duckedAirGate =
     obstacle.userData.collision === "air" &&
     lateral < obstacle.userData.width &&
     game.jumpHeight < obstacle.userData.airHitMin * 0.45;
 
+  if (nearMiss && nearGap < GOD_DODGE_MARGIN) {
+    return { kind: "god", label: "神回避", base: 420 };
+  }
   if (nearMiss && nearGap < PERFECT_NEAR_MARGIN) {
     return { kind: "perfect", label: "パーフェクト", base: 320 };
   }
   if (
     jumpedObstacle &&
-    game.jumpHeight - obstacle.userData.jumpClear < PERFECT_JUMP_WINDOW
+    clearHeight - obstacle.userData.jumpClear < PERFECT_JUMP_WINDOW
   ) {
     return { kind: "perfectJump", label: "パーフェクト", base: 300 };
   }
@@ -1765,18 +2132,25 @@ function applyPassReward(result) {
     awardScore(82);
     return;
   }
-  const isPerfect = result.kind.startsWith("perfect");
-  if (result.kind === "near" || result.kind === "perfect") {
+  const isPerfect = result.kind.startsWith("perfect") || result.kind === "god";
+  if (result.kind === "near" || result.kind === "perfect" || result.kind === "god") {
     game.nearMisses += 1;
+    game.totalNearMisses += 1;
   }
   if (result.kind === "jump" || result.kind === "perfectJump") {
     game.jumpDodges += 1;
+    game.totalJumpDodges += 1;
+  }
+  if (result.kind === "god") {
+    game.godDodges += 1;
   }
   if (isPerfect) {
     game.perfects += 1;
+    game.totalPerfects += 1;
     game.perfectChain += 1;
-    bumpCombo(2);
-    chargeRush(18);
+    game.bestPerfectChain = Math.max(game.bestPerfectChain, game.perfectChain);
+    bumpCombo(result.kind === "god" ? 3 : 2);
+    chargeRush(result.kind === "god" ? 24 : 18);
     awardScore(result.base + game.perfectChain * 24, result.label);
     if (game.perfectChain > 0 && game.perfectChain % 3 === 0) {
       awardScore(220 + game.perfectChain * 20, "連鎖");
@@ -1817,7 +2191,7 @@ function chooseRiskLane() {
   }
   game.riskLane = nextLane;
   game.riskTimer = RISK_ROUTE_DURATION;
-  setStatusMessage(`危険ルート ${getRiskLaneLabel()} +45%`, 1.3);
+  setStatusMessage(`危険レーン ${getRiskLaneLabel()} +45%`, 1.3);
 }
 
 function updateRiskRoute(delta, difficulty) {
@@ -1902,11 +2276,22 @@ function updateRandomEvent(delta, difficulty) {
 }
 
 function applyEventVisuals() {
-  scene.background.copy(defaultSceneColor);
+  const segment = getSegmentConfig();
+  scene.background.set(segment.background);
+  materials.asphalt.color.set(segment.road);
+  materials.lane.color.set(segment.lane);
+  materials.grass.color.set(segment.grass);
+  materials.shoulder.color.set(segment.shoulder);
+  if (game.eventType === "lucky") {
+    scene.background.offsetHSL(0.02, 0.04, 0.04);
+  } else if (game.eventType === "traffic") {
+    materials.asphalt.color.offsetHSL(0, 0.02, -0.035);
+  }
 }
 
 function updateGame(delta) {
   const difficulty = getDifficulty();
+  updateSegment(delta, difficulty);
   updateRiskRoute(delta, difficulty);
   updateRandomEvent(delta, difficulty);
 
@@ -1930,6 +2315,9 @@ function updateGame(delta) {
   if (game.jumpCooldown > 0) {
     game.jumpCooldown = Math.max(0, game.jumpCooldown - delta);
   }
+  if (game.jumpBufferTimer > 0) {
+    game.jumpBufferTimer = Math.max(0, game.jumpBufferTimer - delta);
+  }
   if (game.jumpHeight > 0 || game.jumpVelocity > 0) {
     game.groundTimer = 0;
     game.jumpVelocity -= JUMP_GRAVITY * delta;
@@ -1947,6 +2335,9 @@ function updateGame(delta) {
     if (game.groundTimer > JUMP_CHAIN_RECOVERY && game.jumpChain > 0) {
       game.jumpChain = Math.max(0, game.jumpChain - delta * 1.8);
     }
+    if (game.jumpBufferTimer > 0 && game.jumpCooldown === 0) {
+      performJump();
+    }
   }
 
   const speedUnits = game.running ? game.speed / 3.6 : 0;
@@ -1958,7 +2349,8 @@ function updateGame(delta) {
       THREE.MathUtils.lerp(0.9, 1.42, difficulty.factor) *
       (game.rushTimer > 0 ? 1.45 : 1) *
       (isOnRiskRoute() ? RISK_ROUTE_SCORE_MULTIPLIER : 1) *
-      getEventScoreMultiplier();
+      getEventScoreMultiplier() *
+      getSegmentScoreMultiplier();
     addScore(runScore, isOnRiskRoute());
     game.spawnTimer -= delta;
     game.itemTimer -= delta;
@@ -2133,7 +2525,7 @@ function registerHit() {
 }
 
 function moveLane(direction) {
-  if (game.over) {
+  if (!game.running || game.over) {
     return;
   }
   game.targetLane = THREE.MathUtils.clamp(
@@ -2144,25 +2536,31 @@ function moveLane(direction) {
 }
 
 function jump() {
-  if (game.over) {
+  if (!game.running || game.over) {
     return;
   }
   if (game.jumpHeight > 0.02 || game.jumpVelocity > 0.1) {
+    game.jumpBufferTimer = JUMP_INPUT_BUFFER;
     return;
   }
   if (game.jumpCooldown > 0) {
+    game.jumpBufferTimer = JUMP_INPUT_BUFFER;
     setStatusMessage("着地待ち", 0.35);
     return;
   }
-  game.running = true;
-  game.started = true;
+  performJump();
+}
+
+function performJump() {
   game.jumpChain = Math.min(MAX_JUMP_CHAIN, Math.floor(game.jumpChain) + 1);
-  const fatigue = game.jumpChain / MAX_JUMP_CHAIN;
+  const fatigue =
+    Math.max(0, game.jumpChain - 1) / Math.max(1, MAX_JUMP_CHAIN - 1);
   game.jumpVelocity = THREE.MathUtils.lerp(
     JUMP_BASE_VELOCITY,
     JUMP_MIN_VELOCITY,
     fatigue,
   );
+  game.jumpBufferTimer = 0;
   game.groundTimer = 0;
   setStartButtonState();
 }
@@ -2197,13 +2595,21 @@ function resetGame() {
   game.nearMisses = 0;
   game.jumpDodges = 0;
   game.perfects = 0;
+  game.totalNearMisses = 0;
+  game.totalJumpDodges = 0;
+  game.totalPerfects = 0;
+  game.godDodges = 0;
   game.perfectChain = 0;
+  game.bestPerfectChain = 0;
   game.riskScore = 0;
   game.riskLane = null;
   game.riskTimer = 0;
   game.riskCooldown = 1.5;
   game.missionStartLevel = 1;
   game.rushMissionTime = 0;
+  game.segmentType = "city";
+  game.segmentTimer = 0;
+  game.segmentCooldown = 6;
   game.eventType = "";
   game.eventTimer = 0;
   game.eventCooldown = 5.5;
@@ -2217,6 +2623,7 @@ function resetGame() {
   game.jumpHeight = 0;
   game.jumpVelocity = 0;
   game.jumpCooldown = 0;
+  game.jumpBufferTimer = 0;
   game.jumpChain = 0;
   game.groundTimer = 1;
   updateRiskRouteMarker();
@@ -2253,18 +2660,41 @@ function handleKeydown(event) {
   }
 }
 
+function getResultRank() {
+  const rankScore =
+    Math.floor(game.score / 18000) +
+    game.bestCombo * 0.75 +
+    game.totalJumpDodges * 1.25 +
+    game.totalPerfects * 1.8 +
+    game.godDodges * 4.2 +
+    game.bestPerfectChain * 1.4;
+  if (rankScore >= 380) return "SSS";
+  if (rankScore >= 250) return "SS";
+  if (rankScore >= 165) return "S";
+  if (rankScore >= 85) return "A";
+  if (rankScore >= 35) return "B";
+  return "C";
+}
+
 function showGameOver() {
   updateHighScore();
+  finalRankValue.textContent = getResultRank();
   setNumberText(finalScoreValue, game.score, {
-    baseSize: 42,
+    baseSize: 30,
     minSize: 18,
-    pxPerDigit: 260,
+    pxPerDigit: 220,
   });
   setNumberText(finalBestScoreValue, game.highScore, {
-    baseSize: 32,
+    baseSize: 30,
     minSize: 15,
-    pxPerDigit: 210,
+    pxPerDigit: 220,
   });
+  finalComboValue.textContent = `×${game.bestCombo}`;
+  finalSkillValue.textContent = `${game.godDodges}/${game.totalJumpDodges}`;
+  segmentStrip.hidden = true;
+  gameStatus.textContent = "";
+  game.statusText = "";
+  game.statusTimer = 0;
   gameOverOverlay.setAttribute("aria-hidden", "false");
   gameOverOverlay.classList.add("is-visible");
 }
@@ -2294,6 +2724,7 @@ function updateHud() {
     getMissionProgress(mission, difficulty),
     mission.target,
   );
+  const isSegmentActive = game.segmentTimer > 0 && !game.over;
   setNumberText(scoreValue, game.score, { baseSize: 12, pxPerDigit: 46 });
   setNumberText(levelValue, difficulty.level, { baseSize: 12, pxPerDigit: 46 });
   rushValue.textContent =
@@ -2302,8 +2733,15 @@ function updateHud() {
   comboValue.textContent = `×${game.combo}`;
   setNumberText(highScoreValue, game.highScore, { baseSize: 12, pxPerDigit: 46 });
   goalText.textContent = `${mission.label} ${missionProgress}/${mission.target}`;
+  segmentStrip.hidden = !isSegmentActive;
+  if (isSegmentActive) {
+    const segment = getSegmentConfig();
+    segmentText.textContent = `${segment.shortLabel} ${Math.ceil(game.segmentTimer)}秒${segment.effect ? ` ${segment.effect}` : ""}`;
+  }
   fitHudValues();
-  if (game.statusTimer > 0) {
+  if (game.over) {
+    gameStatus.textContent = "";
+  } else if (game.statusTimer > 0) {
     gameStatus.textContent = game.statusText;
   } else if (game.rushTimer > 0) {
     gameStatus.textContent = `ラッシュ ${Math.ceil(game.rushTimer)}秒`;
@@ -2312,7 +2750,7 @@ function updateHud() {
   } else if (game.eventTimer > 0) {
     gameStatus.textContent = `${getEventLabel()} ${Math.ceil(game.eventTimer)}秒`;
   } else if (game.riskTimer > 0) {
-    gameStatus.textContent = `危険 ${getRiskLaneLabel()}`;
+    gameStatus.textContent = `危険レーン ${getRiskLaneLabel()}`;
   } else if (game.jumpHeight > 0.05) {
     gameStatus.textContent = "ジャンプ";
   } else if (game.combo > 1) {
@@ -2453,6 +2891,15 @@ function publishDiagnostics() {
         : null,
       modelLoadError: modelState.loadError,
       travelDirection: "bicycle-front-positive-z",
+      version: GAME_VERSION,
+      segmentType: game.segmentType,
+      segmentTimer: Number(game.segmentTimer.toFixed(2)),
+      totalNearMisses: game.totalNearMisses,
+      totalJumpDodges: game.totalJumpDodges,
+      totalPerfects: game.totalPerfects,
+      godDodges: game.godDodges,
+      bestPerfectChain: game.bestPerfectChain,
+      resultRank: getResultRank(),
     },
   });
 }

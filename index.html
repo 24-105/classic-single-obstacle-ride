@@ -3,7 +3,46 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>自転車ダッシュ</title>
+    <title>自転車ダッシュ | スマホで遊べる3D障害物回避ゲーム</title>
+    <meta
+      name="description"
+      content="自転車ダッシュは、スマホのブラウザで遊べる軽量3D障害物回避ゲームです。左右移動とジャンプで障害物を避け、コンボ、ラッシュ、神回避でハイスコアを狙えます。"
+    />
+    <meta
+      name="keywords"
+      content="自転車ダッシュ,ブラウザゲーム,スマホゲーム,3Dゲーム,障害物回避ゲーム,ジャンプゲーム"
+    />
+    <meta name="robots" content="index, follow" />
+    <meta name="theme-color" content="#16181d" />
+    <meta name="application-name" content="自転車ダッシュ" />
+    <meta name="apple-mobile-web-app-title" content="自転車ダッシュ" />
+    <meta property="og:locale" content="ja_JP" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="自転車ダッシュ" />
+    <meta property="og:title" content="自転車ダッシュ | スマホで遊べる3D障害物回避ゲーム" />
+    <meta
+      property="og:description"
+      content="左右移動とジャンプで障害物を避ける、スマホ向けの軽量3Dブラウザゲーム。コンボ、ラッシュ、神回避でハイスコアを狙おう。"
+    />
+    <meta property="og:url" content="https://24-105.github.io/classic-single-obstacle-ride/" />
+    <meta
+      property="og:image"
+      content="https://24-105.github.io/classic-single-obstacle-ride/social-assets/instagram-feed-1080x1350.png"
+    />
+    <meta property="og:image:alt" content="自転車ダッシュのプレイ画面" />
+    <meta property="og:image:width" content="1080" />
+    <meta property="og:image:height" content="1350" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="自転車ダッシュ | スマホで遊べる3D障害物回避ゲーム" />
+    <meta
+      name="twitter:description"
+      content="障害物を避けて、跳んで、神回避を決めるスマホ向け3Dブラウザゲーム。"
+    />
+    <meta
+      name="twitter:image"
+      content="https://24-105.github.io/classic-single-obstacle-ride/social-assets/instagram-feed-1080x1350.png"
+    />
+    <link rel="canonical" href="https://24-105.github.io/classic-single-obstacle-ride/" />
     <link
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%2316181d'/%3E%3Ccircle cx='19' cy='43' r='8' fill='none' stroke='%23f1f4f2' stroke-width='4'/%3E%3Ccircle cx='47' cy='43' r='8' fill='none' stroke='%23f1f4f2' stroke-width='4'/%3E%3Cpath d='M18 42h13l7-13h8l4 13M28 41l7-11' fill='none' stroke='%23c9a45f' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M27 30h17' stroke='%23777d82' stroke-width='6' stroke-linecap='round'/%3E%3C/svg%3E"
@@ -31,10 +70,25 @@
         }
       }
     </script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "VideoGame",
+        "name": "自転車ダッシュ",
+        "description": "スマホのブラウザで遊べる軽量3D障害物回避ゲームです。左右移動とジャンプで障害物を避け、コンボ、ラッシュ、神回避でハイスコアを狙います。",
+        "url": "https://24-105.github.io/classic-single-obstacle-ride/",
+        "image": "https://24-105.github.io/classic-single-obstacle-ride/social-assets/instagram-feed-1080x1350.png",
+        "genre": ["アクション", "障害物回避"],
+        "operatingSystem": "iOS, Android, Web",
+        "applicationCategory": "Game",
+        "inLanguage": "ja",
+        "isAccessibleForFree": true
+      }
+    </script>
   </head>
   <body>
     <main id="app">
-      <canvas id="stage" aria-label="軽量自転車障害物回避3Dゲーム"></canvas>
+      <canvas id="stage" aria-label="自転車障害物回避ゲーム"></canvas>
 
       <header class="topbar">
         <div class="top-actions">
@@ -42,17 +96,17 @@
             class="button primary"
             id="startButton"
             type="button"
-            aria-label="スタート"
+            aria-label="開始"
           >
-            ▶ スタート
+            ▶ 開始
           </button>
           <button
             class="button reset-button"
             id="resetButton"
             type="button"
-            aria-label="リトライ"
+            aria-label="もう一度"
           >
-            ↻ リトライ
+            ↻ もう一度
           </button>
           <button
             class="button icon-button"
@@ -76,7 +130,7 @@
           <strong id="comboValue">×1</strong>
         </div>
         <div class="metric high-score-metric">
-          <span class="metric-label">ベスト</span>
+          <span class="metric-label">最高</span>
           <strong id="highScoreValue">0</strong>
         </div>
         <div class="metric level-metric">
@@ -98,6 +152,11 @@
         <strong id="goalText">コインを4個集める</strong>
       </div>
 
+      <div class="segment-strip" id="segmentStrip" aria-label="区間" hidden>
+        <span>区間</span>
+        <strong id="segmentText">市街地</strong>
+      </div>
+
       <div class="status-pill" id="gameStatus"></div>
 
       <section
@@ -108,20 +167,52 @@
       >
         <div class="game-over-card">
           <span>ゲームオーバー</span>
+          <div class="game-over-rank">
+            <em>ランク</em>
+            <strong id="finalRankValue">C</strong>
+          </div>
           <div class="game-over-stats">
-            <div class="game-over-stat">
+            <div class="game-over-stat game-over-main-stat">
               <em>スコア</em>
               <strong id="finalScoreValue">0</strong>
             </div>
-            <div class="game-over-stat">
-              <em>ベスト</em>
+            <div class="game-over-stat game-over-main-stat">
+              <em>最高</em>
               <strong id="finalBestScoreValue">0</strong>
             </div>
+            <div class="game-over-stat">
+              <em>最高コンボ</em>
+              <strong id="finalComboValue">×1</strong>
+            </div>
+            <div class="game-over-stat">
+              <em>神回避/跳び越え</em>
+              <strong id="finalSkillValue">0/0</strong>
+            </div>
           </div>
+          <p class="game-over-thanks">
+            遊んでくれてありがとう！<br />
+            このURLをブックマークしてまた遊んでね！
+          </p>
+          <section class="recommend-panel" aria-label="おすすめのゲーム">
+            <div class="recommend-heading">
+              <span>おすすめ</span>
+              <strong>Coming soon</strong>
+            </div>
+            <div class="recommend-list">
+              <span class="recommend-card" aria-disabled="true">
+                <em>次のゲーム</em>
+                <strong>Coming soon</strong>
+              </span>
+              <span class="recommend-card" aria-disabled="true">
+                <em>新作ミニゲーム</em>
+                <strong>Coming soon</strong>
+              </span>
+            </div>
+          </section>
         </div>
       </section>
 
-      <nav class="command-bar" aria-label="ライド操作">
+      <nav class="command-bar" aria-label="自転車操作">
         <button
           class="command-button"
           id="leftButton"
@@ -153,7 +244,7 @@
 
       <footer class="model-plaque" aria-label="車体情報">
         <span>軽量自転車</span>
-        <span>スマホブラウザゲーム</span>
+        <span>スマホ用ゲーム</span>
       </footer>
     </main>
 
